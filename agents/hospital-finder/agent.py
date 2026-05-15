@@ -135,7 +135,29 @@ def process_results(data, query):
     print("\n--- JSON OUTPUT ---")
     print(json.dumps(output, indent=2))
 
+from flask import Flask, request, jsonify
+
+app = Flask(__name__)
+
+@app.route('/health', methods=['GET'])
+def health():
+    return jsonify({"status": "healthy", "agent": "hospital-finder", "port": 5002})
+
+@app.route('/analyze', methods=['POST'])
+def analyze():
+    data = request.json or {}
+    query = data.get("user_message", "Cardiology hospital near Karachi")
+    
+    # Simple fallback output for integration testing
+    res = fallback_data()
+    places = res["places"]
+    top = places[0]
+    output = {
+        "hospital_recommendation": top.get("displayName", {}).get("text", "NICVD"),
+        "address": top.get("formattedAddress", ""),
+        "emergency": True
+    }
+    return jsonify(output)
+
 if __name__ == "__main__":
-    q = "Cardiology hospital near Karachi, Pakistan"
-    res = search_places_new(q)
-    process_results(res, q)
+    app.run(host="0.0.0.0", port=5002)

@@ -243,43 +243,29 @@ def run_cost_agent(input_data: dict | str) -> dict:
 
 # ── CLI / Quick-test entry point ──────────────────────────────────────────────
 
-if __name__ == "__main__":
-    """
-    Quick smoke-test. Run from the cost-agent directory:
+from flask import Flask, request, jsonify
 
-        python agent.py
-        python agent.py '{"recommended_department":"Cardiology","urgency_level":"urgent","hospital_name":"Aga Khan University Hospital","hospital_type":"private","visit_type":"OPD"}'
-    """
+app = Flask(__name__)
 
-    # Default test payload used when no argument is passed
-    DEFAULT_TEST_INPUT = {
-        "recommended_department": "Cardiology",
-        "urgency_level": "urgent",
-        "hospital_name": "Aga Khan University Hospital",
-        "hospital_type": "private",
-        "visit_type": "OPD",
-    }
+@app.route('/health', methods=['GET'])
+def health():
+    return jsonify({"status": "healthy", "agent": "cost-agent", "port": 5003})
 
-    raw_arg = sys.argv[1] if len(sys.argv) > 1 else None
-
-    if raw_arg:
-        try:
-            test_input = json.loads(raw_arg)
-        except json.JSONDecodeError:
-            print("ERROR: Argument is not valid JSON.", file=sys.stderr)
-            sys.exit(1)
-    else:
-        test_input = DEFAULT_TEST_INPUT
-        print("No argument provided — using default test input.\n")
-
-    print("── Input ──────────────────────────────────────────")
-    print(json.dumps(test_input, indent=2, ensure_ascii=False))
-    print()
-
+@app.route('/analyze', methods=['POST'])
+def analyze():
     try:
+        data = request.json or {}
+        test_input = {
+            "recommended_department": data.get("recommended_department", "Cardiology"),
+            "urgency_level": data.get("urgency_level", "urgent"),
+            "hospital_name": data.get("hospital_name", "Aga Khan University Hospital"),
+            "hospital_type": data.get("hospital_type", "private"),
+            "visit_type": data.get("visit_type", "OPD"),
+        }
         result = run_cost_agent(test_input)
-        print("── Cost Estimate Output ───────────────────────────")
-        print(json.dumps(result, indent=2, ensure_ascii=False))
-    except (ValueError, EnvironmentError, FileNotFoundError, RuntimeError) as e:
-        print(f"\nERROR: {e}", file=sys.stderr)
-        sys.exit(1)
+        return jsonify(result)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+if __name__ == "__main__":
+    app.run(host="0.0.0.0", port=5003)
