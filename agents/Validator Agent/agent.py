@@ -1,5 +1,7 @@
 import json
 import re
+from flask import Flask, request, jsonify
+from flask_cors import CORS
 
 def validate_hospital_output(hospital_finder_output, original_request):
     failed_checks = []
@@ -182,54 +184,30 @@ def reject_response(failed_checks, edge_cases, original_request, validator_note=
         "system_state": "BEFORE: No appointment booked | AFTER: Validation failed, retrying search"
     }
 
+app = Flask(__name__)
+CORS(app)
+
+@app.route('/health', methods=['GET'])
+def health():
+    return jsonify({
+        "status": "healthy",
+        "agent": "validator",
+        "port": 5005
+    })
+
+@app.route('/analyze', methods=['POST'])
+def analyze():
+    try:
+        data = request.json or {}
+        hospital_output = data.get(
+            "hospital_finder_output", {})
+        original_request = data.get(
+            "original_request", {})
+        result = validate_hospital_output(
+            hospital_output, original_request)
+        return jsonify(result)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
 if __name__ == "__main__":
-    # Test Data 1: Pass case
-    sample_request = {
-        "required_department": "Cardiology",
-        "user_location": "Karachi",
-        "urgency_level": "HIGH",
-        "hospital_preference": "GOVERNMENT"
-    }
-    sample_output_pass = {
-        "top_recommendation": {
-            "name": "NICVD",
-            "department": "Cardiology",
-            "type": "Government",
-            "distance": "3.5 km",
-            "phone": "021-99201271",
-            "address": "Rafiqui (H.J.) Shaheed Road, Karachi",
-            "maps_link": "https://maps.google.com/?q=NICVD+Karachi",
-            "rating": 4.6,
-            "emergency": True,
-            "open_now": True,
-            "opening_hours": "24/7"
-        },
-        "alternatives": [
-            {"distance": "8.2 km"}
-        ],
-        "emergency_note": "URGENCY IS HIGH: Please proceed immediately...",
-        "cost_comparison": {
-            "government_option": {},
-            "private_option": {}
-        },
-        "reasoning": "Selected nearest Government facility offering Cardiology services with high ratings.",
-        "total_found": 3
-    }
-    
-    print("--- TEST PASS CASE ---")
-    print(json.dumps(validate_hospital_output(sample_output_pass, sample_request), indent=2))
-    
-    print("\n--- TEST FAIL CASE (Wrong preference and distance) ---")
-    sample_output_fail = dict(sample_output_pass)
-    sample_output_fail["top_recommendation"] = dict(sample_output_pass["top_recommendation"])
-    sample_output_fail["top_recommendation"]["type"] = "Private"
-    sample_output_fail["top_recommendation"]["distance"] = "30 km"
-    print(json.dumps(validate_hospital_output(sample_output_fail, sample_request), indent=2))
-    
-    print("\n--- TEST EDGE CASE (CRITICAL no emergency) ---")
-    req_crit = dict(sample_request)
-    req_crit["urgency_level"] = "CRITICAL"
-    sample_output_edge = dict(sample_output_pass)
-    sample_output_edge["top_recommendation"] = dict(sample_output_pass["top_recommendation"])
-    sample_output_edge["top_recommendation"]["emergency"] = False
-    print(json.dumps(validate_hospital_output(sample_output_edge, req_crit), indent=2))
+    app.run(host="0.0.0.0", port=5005)
