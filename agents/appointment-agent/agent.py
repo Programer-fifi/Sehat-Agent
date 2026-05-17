@@ -40,6 +40,8 @@ from datetime import date, timedelta
 from pathlib import Path
 
 from dotenv import load_dotenv
+from flask import Flask, request, jsonify
+from flask_cors import CORS
 
 from google import genai
 from google.genai import types as genai_types
@@ -598,7 +600,7 @@ def run_appointment_agent(input_data: dict | str) -> dict:
 
 # ── CLI / Quick-test entry point ──────────────────────────────────────────────
 
-if __name__ == "__main__":
+def _run_cli() -> None:
     """
     Quick smoke-test. Run from the appointment-agent directory:
 
@@ -641,3 +643,48 @@ if __name__ == "__main__":
     except (ValueError, EnvironmentError, FileNotFoundError, RuntimeError, TypeError) as e:
         print(f"\nERROR: {e}", file=sys.stderr)
         sys.exit(1)
+
+
+# ── Flask Server ──────────────────────────────────────────────────────────────
+
+app = Flask(__name__)
+CORS(app)
+
+
+@app.route("/health", methods=["GET"])
+def health():
+    """Health check endpoint."""
+    return jsonify({"status": "healthy", "agent": "appointment-agent", "port": 5004})
+
+
+@app.route("/analyze", methods=["POST"])
+def analyze():
+    """Receive appointment request, run agent, return JSON result."""
+    try:
+        payload = request.get_json(force=True) or {}
+
+        # Case 1 — Orchestrator payload: has user_message but no hospital_name
+        if "user_message" in payload and not payload.get("hospital_name"):
+            input_data = {
+                "hospital_name": "Aga Khan University Hospital",
+                "department":    "General Medicine",
+                "urgency_level": "urgent",
+                "patient_name":  "Patient",
+            }
+        # Case 2 — Direct payload: hospital_name is provided
+        else:
+            input_data = {
+                "hospital_name": payload.get("hospital_name"),
+                "department":    payload.get("department"),
+                "urgency_level": payload.get("urgency_level"),
+                "patient_name":  payload.get("patient_name"),
+            }
+
+        result = run_appointment_agent(input_data)
+        return jsonify(result)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+if __name__ == "__main__":
+    app.run(host="0.0.0.0", port=5004)

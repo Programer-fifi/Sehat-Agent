@@ -48,7 +48,7 @@ def detect_intent(user_message, trace_logs):
         """
         
         response = client.models.generate_content(
-            model='gemini-2.0-flash',
+            model='gemini-2.5-flash',
             contents=prompt,
         )
         intent = response.text.strip().upper()
