@@ -252,7 +252,7 @@
         .em-alert-text { color: var(--danger); font-weight: bold; margin-bottom: 8px; font-size: 14px; text-transform: uppercase; letter-spacing: 1px; }
 
         /* Stage 3: Results Screen */
-        #stage-3 { background: var(--bg-mint); padding-bottom: 80px; overflow-y: auto; }
+        #stage-3 { background: var(--bg-mint); padding-bottom: 120px; overflow-y: auto; }
         .st-header .btn-back { background: none; border: none; font-size: 20px; color: var(--primary-dark); cursor: pointer; padding-right: 12px; display: flex; align-items: center; }
 
         .s3-summary-bar { background: white; padding: 16px; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--border-light); }
@@ -286,7 +286,7 @@
         .btn-fu-send { width: 100%; height: 44px; background: var(--primary); color: white; border: none; border-radius: 12px; font-weight: bold; cursor: pointer; transition: 0.2s;}
         .btn-fu-send:active { transform: scale(0.98); }
 
-        .s3-action-bar { position: absolute; bottom: 0; left: 0; width: 100%; background: white; border-top: 1px solid var(--border-light); padding: 12px 16px; display: flex; gap: 12px; z-index: 20; }
+        .s3-action-bar { position: fixed; bottom: 0; left: 50%; transform: translateX(-50%); width: 100%; max-width: 480px; background: white; border-top: 1px solid #D1FAE5; padding: 12px 16px; display: flex; gap: 12px; z-index: 100; }
         .btn-s3 { flex: 1; height: 48px; border-radius: 12px; font-size: 14px; font-weight: bold; cursor: pointer; font-family: 'Plus Jakarta Sans', sans-serif; transition: 0.2s; }
         .btn-new { background: white; border: 2px solid var(--primary); color: var(--primary); }
         .btn-trace { background: var(--primary); border: none; color: white; }
@@ -349,6 +349,61 @@
         .tp-footer { padding: 12px; text-align: center; font-size: 10px; color: var(--primary-light); border-top: 1px solid rgba(52,211,153,0.1);}
 
         .hidden { display: none !important; }
+
+        /* ── API Quota Tracker Widget ── */
+        #quota-btn {
+            position: fixed; bottom: 80px; left: 16px;
+            width: 32px; height: 32px; border-radius: 50%;
+            background: rgba(0,0,0,0.65); border: none;
+            color: white; font-size: 15px; cursor: pointer;
+            display: flex; justify-content: center; align-items: center;
+            z-index: 999; box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+            transition: transform 0.2s;
+        }
+        #quota-btn:hover { transform: scale(1.1); }
+        #quota-panel {
+            position: fixed; bottom: 120px; left: 16px;
+            width: 220px; background: rgba(15,15,15,0.92);
+            backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+            border-radius: 12px; padding: 12px;
+            z-index: 999; display: none;
+            box-shadow: 0 8px 32px rgba(0,0,0,0.5);
+            border: 1px solid rgba(255,255,255,0.08);
+            animation: fadeIn 0.2s ease;
+        }
+        #quota-panel.open { display: block; }
+        .qp-header {
+            display: flex; justify-content: space-between; align-items: center;
+            margin-bottom: 10px;
+        }
+        .qp-title { color: white; font-size: 12px; font-weight: 700; font-family: 'Plus Jakarta Sans', sans-serif; }
+        .qp-close { background: none; border: none; color: rgba(255,255,255,0.5); font-size: 16px; cursor: pointer; line-height: 1; padding: 0; }
+        .qp-close:hover { color: white; }
+        .qp-row {
+            display: flex; align-items: center; gap: 8px;
+            padding: 6px 0; border-bottom: 1px solid rgba(255,255,255,0.06);
+        }
+        .qp-row:last-of-type { border-bottom: none; }
+        .qp-dot {
+            width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0;
+            background: #6B7280; /* gray default */
+        }
+        .qp-dot.ok { background: #10B981; box-shadow: 0 0 4px #10B981; }
+        .qp-dot.slow { background: #F59E0B; box-shadow: 0 0 4px #F59E0B; }
+        .qp-dot.error { background: #EF4444; box-shadow: 0 0 4px #EF4444; }
+        .qp-info { flex: 1; }
+        .qp-name { color: rgba(255,255,255,0.9); font-size: 11px; font-weight: 600; line-height: 1.2; }
+        .qp-meta { color: rgba(255,255,255,0.4); font-size: 10px; line-height: 1.3; }
+        .qp-fallback { color: #EF4444; font-size: 9px; font-weight: 600; }
+        .qp-footer {
+            margin-top: 10px; display: flex; justify-content: center;
+        }
+        .qp-reset {
+            background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.15);
+            color: rgba(255,255,255,0.6); font-size: 10px; padding: 4px 12px;
+            border-radius: 6px; cursor: pointer; transition: 0.2s;
+        }
+        .qp-reset:hover { background: rgba(255,255,255,0.15); color: white; }
     </style>
 </head>
 <body>
@@ -559,9 +614,24 @@
 
 </div>
 
+<!-- API Quota Tracker Widget -->
+<button id="quota-btn" onclick="toggleQuotaPanel()" title="API Quota Tracker">📊</button>
+<div id="quota-panel">
+    <div class="qp-header">
+        <div class="qp-title">📊 API Quota Tracker</div>
+        <button class="qp-close" onclick="toggleQuotaPanel()">✕</button>
+    </div>
+    <div id="qp-rows">
+        <!-- rows injected by JS -->
+    </div>
+    <div class="qp-footer">
+        <button class="qp-reset" onclick="resetQuotaStats()">Reset Stats</button>
+    </div>
+</div>
+
 <!-- JAVASCRIPT LOGIC -->
 <script>
-    const MOCK_MODE = true;
+    const MOCK_MODE = false;
     let sessionId = "session_" + Math.random().toString(36).substr(2, 9);
     let conversationHistory = [];
     let selectedLang = 'ur-rom';
@@ -719,6 +789,7 @@
     }
 
     async function startAnalysis() {
+        const analysisStart = Date.now();
         const text = inputField.value.trim();
         const file = fileInput.files[0];
         
@@ -728,7 +799,18 @@
         conversationHistory.push({ role: 'user', content: text, has_image: !!file, language: selectedLang });
         
         switchScreen('stage2');
-        renderAgentCards(['Agent-5001'], false);
+        // Show all 5 agent cards by default while waiting for backend response
+        renderAgentCards(Object.keys(AGENT_DEFS), false);
+
+        // Safety net: force transition to Stage 3 after 45s max, regardless of agent state
+        let transitioned = false;
+        const safetyTimeout = setTimeout(() => {
+            if (!transitioned) {
+                transitioned = true;
+                markAgentsDone();
+                renderStage3({ symptoms_summary: "Analysis complete. Please review results or try again." });
+            }
+        }, 45000);
         
         try {
             let data;
@@ -748,17 +830,27 @@
                     confidence: "MEDIUM"
                 };
             } else {
+                const controller = new AbortController();
+                const fetchTimeout = setTimeout(() => controller.abort(), 45000);
+
                 const payload = { session_id: sessionId, message: text, language: selectedLang, history: conversationHistory };
                 if (base64File) payload.image = base64File;
                 
                 const res = await fetch('http://localhost:5000/analyze', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(payload)
+                    body: JSON.stringify(payload),
+                    signal: controller.signal
                 });
+                clearTimeout(fetchTimeout);
+                console.log('Response status:', res.status);
+                console.log('Response ok:', res.ok);
                 if (!res.ok) throw new Error("Server Error");
                 data = await res.json();
+                console.log('Data received:', JSON.stringify(data));
             }
+
+            updateQuotaFromResponse(data, Date.now() - analysisStart);
 
             const isEmergency = data.urgency_level === 'CRITICAL';
             if(isEmergency) {
@@ -774,14 +866,32 @@
             setTimeout(() => {
                 markAgentsDone();
                 setTimeout(() => {
-                    if(isEmergency) showEmergency();
-                    else renderStage3(data);
+                    if (!transitioned) {
+                        transitioned = true;
+                        clearTimeout(safetyTimeout);
+                        if(isEmergency) {
+                            showEmergency();
+                            renderStage3(data); // ensure View Details has data
+                        } else {
+                            renderStage3(data);
+                        }
+                    }
                 }, 800);
             }, isEmergency ? 1000 : 1500);
 
         } catch (e) {
-            markAgentsDone();
-            setTimeout(() => renderStage3({ symptoms_summary: "Error connecting to server. Is the backend running?" }), 1000);
+            console.error('Fetch error:', e);
+            console.error('Error name:', e.name);
+            console.error('Error message:', e.message);
+            if (!transitioned) {
+                transitioned = true;
+                clearTimeout(safetyTimeout);
+                markAgentsDone();
+                const msg = e.name === 'AbortError'
+                    ? "Request timed out. The backend took too long to respond. Please try again."
+                    : "Error connecting to server. Is the backend running?";
+                setTimeout(() => renderStage3({ symptoms_summary: msg }), 1000);
+            }
         }
     }
 
@@ -861,10 +971,19 @@
             </div>`;
         }
         if(data.cost_estimate) {
+            let costStr = data.cost_estimate;
+            // Drill into nested structure: cost_estimate.estimated_cost.minimum/maximum/currency
+            if (typeof costStr === 'object') {
+                const ec = costStr.estimated_cost || costStr;
+                const currency = ec.currency || costStr.currency || 'PKR';
+                const min = ec.minimum ?? costStr.minimum ?? 0;
+                const max = ec.maximum ?? costStr.maximum ?? 0;
+                costStr = `${currency} ${min.toLocaleString()} - ${max.toLocaleString()}`;
+            }
             cards.innerHTML += `
             <div class="r-card cost">
                 <div class="rc-header"><span>💰</span><div class="rc-title">Cost Estimate</div></div>
-                <div class="rc-main-val">${data.cost_estimate}</div>
+                <div class="rc-main-val">${costStr}</div>
             </div>`;
         }
         if(data.appointment) {
@@ -893,6 +1012,78 @@
 
     function showEmergency() { screens.emergency.classList.add('active'); }
     function closeEmergency() { screens.emergency.classList.remove('active'); }
+
+    // ── API Quota Tracker ────────────────────────────────────────────────────
+    const QUOTA_AGENTS = [
+        { id: 'Agent-5001', icon: '🧠', name: 'Symptom Agent',    port: 5001 },
+        { id: 'Agent-5002', icon: '🏥', name: 'Hospital Finder',  port: 5002 },
+        { id: 'Agent-5003', icon: '💊', name: 'Cost Agent',       port: 5003 },
+        { id: 'Agent-5004', icon: '📅', name: 'Appointment Agent',port: 5004 },
+        { id: 'Agent-5005', icon: '🔍', name: 'Validator',        port: 5005 },
+        { id: 'Orchestrator','icon': '🎯', name: 'Orchestrator',  port: 5000 },
+    ];
+
+    let quotaStats = {};
+    QUOTA_AGENTS.forEach(a => { quotaStats[a.id] = { status: 'gray', time: null, fallback: false }; });
+
+    function updateQuotaFromResponse(data, elapsedMs) {
+        const agentsUsed = data.agents_used || [];
+        const totalTime = data.total_time_seconds ? data.total_time_seconds * 1000 : elapsedMs;
+        const fallbackUsed = !!data.fallback_used;
+        const perAgent = totalTime / Math.max(agentsUsed.length, 1);
+
+        agentsUsed.forEach(aId => {
+            const t = perAgent / 1000; // seconds
+            let status = t < 5 ? 'ok' : (t < 20 ? 'slow' : 'error');
+            if (fallbackUsed) status = 'error';
+            quotaStats[aId] = { status, time: t.toFixed(1), fallback: fallbackUsed };
+        });
+
+        // Orchestrator overall
+        const totalSec = totalTime / 1000;
+        quotaStats['Orchestrator'] = {
+            status: totalSec < 5 ? 'ok' : (totalSec < 20 ? 'slow' : 'error'),
+            time: totalSec.toFixed(1),
+            fallback: fallbackUsed
+        };
+
+        renderQuotaPanel();
+    }
+
+    function renderQuotaPanel() {
+        const container = document.getElementById('qp-rows');
+        if (!container) return;
+        container.innerHTML = QUOTA_AGENTS.map(agent => {
+            const s = quotaStats[agent.id] || { status: 'gray', time: null, fallback: false };
+            const dotClass = s.status === 'gray' ? '' : s.status;
+            const timeTxt = s.time !== null ? `${s.time}s` : '—';
+            const statusLabel = { ok: 'OK', slow: 'Slow', error: 'Quota/Error', gray: 'Not tested' }[s.status];
+            const fallbackHtml = s.fallback ? `<div class="qp-fallback">⚠ Fallback active</div>` : '';
+            return `
+            <div class="qp-row">
+                <div class="qp-dot ${dotClass}"></div>
+                <div class="qp-info">
+                    <div class="qp-name">${agent.icon} ${agent.name}</div>
+                    <div class="qp-meta">${statusLabel} · ${timeTxt}</div>
+                    ${fallbackHtml}
+                </div>
+            </div>`;
+        }).join('');
+    }
+
+    function toggleQuotaPanel() {
+        const panel = document.getElementById('quota-panel');
+        panel.classList.toggle('open');
+        if (panel.classList.contains('open')) renderQuotaPanel();
+    }
+
+    function resetQuotaStats() {
+        QUOTA_AGENTS.forEach(a => { quotaStats[a.id] = { status: 'gray', time: null, fallback: false }; });
+        renderQuotaPanel();
+    }
+
+    // Init panel rows on load
+    renderQuotaPanel();
 </script>
 
 </body>

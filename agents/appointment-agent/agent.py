@@ -36,6 +36,7 @@ import json
 import os
 import re
 import sys
+import traceback
 from datetime import date, timedelta
 from pathlib import Path
 
@@ -660,8 +661,20 @@ def health():
 @app.route("/analyze", methods=["POST"])
 def analyze():
     """Receive appointment request, run agent, return JSON result."""
+    FALLBACK_RESPONSE = {
+        "booking_status":   "unavailable",
+        "token_number":     None,
+        "appointment_date": None,
+        "appointment_time": None,
+        "hospital":         "Please visit nearest hospital",
+        "department":       "Emergency",
+        "patient_pass":     None,
+        "sms_simulation":   None,
+        "error":            "Appointment booking temporarily unavailable"
+    }
     try:
         payload = request.get_json(force=True) or {}
+        print(f"[AppointmentAgent] /analyze called with payload keys: {list(payload.keys())}", flush=True)
 
         # Case 1 — Orchestrator payload: has user_message but no hospital_name
         if "user_message" in payload and not payload.get("hospital_name"):
@@ -674,16 +687,21 @@ def analyze():
         # Case 2 — Direct payload: hospital_name is provided
         else:
             input_data = {
-                "hospital_name": payload.get("hospital_name"),
-                "department":    payload.get("department"),
-                "urgency_level": payload.get("urgency_level"),
-                "patient_name":  payload.get("patient_name"),
+                "hospital_name": payload.get("hospital_name") or "Aga Khan University Hospital",
+                "department":    payload.get("department") or "General Medicine",
+                "urgency_level": payload.get("urgency_level") or "urgent",
+                "patient_name":  payload.get("patient_name") or "Patient",
             }
 
+        print(f"[AppointmentAgent] Running agent with input: {input_data}", flush=True)
         result = run_appointment_agent(input_data)
+        print(f"[AppointmentAgent] Agent completed. booking_status={result.get('booking_status')}", flush=True)
         return jsonify(result)
+
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        print(f"[AppointmentAgent] ERROR in /analyze: {type(e).__name__}: {e}", flush=True)
+        print(traceback.format_exc(), flush=True)
+        return jsonify(FALLBACK_RESPONSE)
 
 
 if __name__ == "__main__":

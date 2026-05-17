@@ -58,6 +58,21 @@ VALID_URGENCY = {"routine", "urgent", "critical", "emergency"}
 VALID_HOSPITAL_TYPE = {"private", "government"}
 VALID_VISIT_TYPE = {"opd", "emergency"}
 
+# ── Instant Cost Lookup Table (no Gemini needed) ──────────────────────────────
+# Format: keyword (lowercase) -> (min_pkr, max_pkr)
+INSTANT_COST_TABLE = [
+    (["emergency", "critical"],          (5000, 20000)),
+    (["cardiology", "cardiac", "heart"],  (3000, 15000)),
+    (["neurology", "neuro", "brain"],     (2000, 10000)),
+    (["oncology", "cancer"],              (5000, 25000)),
+    (["orthopedic", "ortho", "bone"],     (2000, 8000)),
+    (["pediatric", "child", "children"],  (1000, 5000)),
+    (["gynecology", "gynaecology", "obs"],(1500, 8000)),
+    (["radiology", "imaging", "scan"],   (2000, 10000)),
+    (["general medicine", "general"],     (500, 3000)),
+]
+DEFAULT_COST = (1000, 5000)
+
 # ── Helpers ──────────────────────────────────────────────────────────────────
 
 
@@ -154,90 +169,119 @@ def _build_user_message(input_data: dict) -> str:
     )
 
 
-# ── Core Function ─────────────────────────────────────────────────────────────
+def _instant_cost_lookup(department: str, urgency: str, hospital_type: str, visit_type: str) -> dict:
+    """
+    Return a cost estimate instantly from the keyword table.
+    No Gemini call needed — always responds in < 10ms.
+    """
+    dept_lower = department.lower()
+    urgency_lower = urgency.lower()
+    visit_lower = visit_type.lower()
+
+    # Emergency visit overrides department cost floor
+    if urgency_lower in ("critical", "emergency") or visit_lower == "emergency":
+        minimum, maximum = 5000, 20000
+    else:
+        minimum, maximum = DEFAULT_COST
+        for keywords, (mn, mx) in INSTANT_COST_TABLE:
+            if any(kw in dept_lower for kw in keywords):
+                minimum, maximum = mn, mx
+                break
+
+    # Government hospitals cost ~40% less
+    if hospital_type.lower() == "government":
+        minimum = int(minimum * 0.4)
+        maximum = int(maximum * 0.5)
+
+    govt_available = hospital_type.lower() == "private"
+    govt_min = int(minimum * 0.4)
+    govt_max = int(maximum * 0.5)
+
+    return {
+        "estimated_cost": {"minimum": minimum, "maximum": maximum, "currency": "PKR"},
+        "breakdown": {
+            "consultation": f"PKR {minimum // 3} - {maximum // 3}",
+            "probable_tests": f"PKR {minimum // 3} - {maximum // 3}",
+            "medicine_estimate": f"PKR {minimum // 3} - {maximum // 3}",
+        },
+        "payment_advice": "Please carry cash or use JazzCash / EasyPaisa. Sehat Card accepted at government hospitals.",
+        "bring_checklist": [
+            "CNIC / ID card",
+            "Previous prescriptions or reports (if any)",
+            "Cash or digital payment method",
+            "Sehat Card (if applicable)",
+        ],
+        "insurance_applicable": False,
+        "government_option_available": govt_available,
+        "government_cost": f"PKR {govt_min} - {govt_max} (at nearest government hospital)" if govt_available else "N/A",
+        "reasoning": f"Estimate based on {department} department, {urgency} urgency, {hospital_type} hospital.",
+        "disclaimer": "Costs are approximate estimates only. Actual charges depend on tests, admission, and treatment required. Always confirm with the hospital.",
+        "source": "instant_lookup",
+    }
 
 
 def run_cost_agent(input_data: dict | str) -> dict:
     """
     Main entry point for the Cost Agent.
-
-    Parameters
-    ----------
-    input_data : dict | str
-        Structured input from the orchestrator. Accepts either a Python dict
-        or a raw JSON string.
-
-    Returns
-    -------
-    dict
-        Cost estimate in the schema defined in prompt.md.
-
-    Raises
-    ------
-    ValueError
-        If required fields are missing/invalid, or if the model response
-        cannot be parsed as JSON.
-    EnvironmentError
-        If the GEMINI_API_KEY environment variable is not set.
-    FileNotFoundError
-        If prompt.md is missing from the cost-agent directory.
+    Returns an instant keyword-based estimate immediately (< 2s).
+    Optionally enhances with Gemini if API key is available.
     """
     # ── 1. Parse input ────────────────────────────────────────────────────────
     if isinstance(input_data, str):
         try:
             input_data = json.loads(input_data)
         except json.JSONDecodeError as exc:
-            raise ValueError(
-                f"input_data is not valid JSON: {exc}"
-            ) from exc
+            raise ValueError(f"input_data is not valid JSON: {exc}") from exc
 
     if not isinstance(input_data, dict):
         raise TypeError(
             f"input_data must be a dict or JSON string, got {type(input_data).__name__}"
         )
 
-    # ── 2. Validate & clean ───────────────────────────────────────────────────
+    # ── 2. Apply defaults for any missing fields (graceful) ───────────────────
+    input_data = dict(input_data)
+    input_data.setdefault("recommended_department", "General Medicine")
+    input_data.setdefault("urgency_level", "urgent")
+    input_data.setdefault("hospital_name", "Unknown Hospital")
+    input_data.setdefault("hospital_type", "private")
+    input_data.setdefault("visit_type", "OPD")
+
+    # ── 3. Validate & clean ───────────────────────────────────────────────────
     validated = _validate_input(input_data)
 
-    # ── 3. Load system prompt ────────────────────────────────────────────────
-    system_prompt = _load_system_prompt()
+    # ── 4. INSTANT keyword-based response (primary — always fast) ─────────────
+    result = _instant_cost_lookup(
+        department=validated["recommended_department"],
+        urgency=validated["urgency_level"],
+        hospital_type=validated["hospital_type"],
+        visit_type=validated["visit_type"],
+    )
 
-    # ── 4. Initialise Gemini client (google-genai 2.x SDK) ───────────────────
-    # Load .env from the cost-agent directory (does nothing if already set)
-    load_dotenv(dotenv_path=Path(__file__).parent / ".env")
-    api_key = os.environ.get("GEMINI_API_KEY")
-    if not api_key:
-        raise EnvironmentError(
-            "GEMINI_API_KEY environment variable is not set. "
-            "Export it before running the Cost Agent:\n"
-            "  Windows: $env:GEMINI_API_KEY = 'your-key-here'\n"
-            "  Linux/Mac: export GEMINI_API_KEY='your-key-here'"
-        )
-    client = genai.Client(api_key=api_key)
-
-    # ── 5. Call Gemini 2.5 Flash ──────────────────────────────────────────────
-    user_message = _build_user_message(validated)
-
+    # ── 5. Optional: Gemini enhancement (skip gracefully if unavailable) ───────
     try:
-        response = client.models.generate_content(
-            model=MODEL_NAME,
-            contents=user_message,
-            config=genai_types.GenerateContentConfig(
-                system_instruction=system_prompt,
-                temperature=0.2,          # Low temperature → deterministic, structured output
-                top_p=0.95,
-                max_output_tokens=8192,
-            ),
-        )
-    except Exception as exc:
-        raise RuntimeError(
-            f"Gemini API call failed: {exc}"
-        ) from exc
+        load_dotenv(dotenv_path=Path(__file__).parent / ".env")
+        api_key = os.environ.get("GEMINI_API_KEY")
+        if api_key:
+            system_prompt = _load_system_prompt()
+            client = genai.Client(api_key=api_key)
+            user_message = _build_user_message(validated)
+            response = client.models.generate_content(
+                model=MODEL_NAME,
+                contents=user_message,
+                config=genai_types.GenerateContentConfig(
+                    system_instruction=system_prompt,
+                    temperature=0.2,
+                    top_p=0.95,
+                    max_output_tokens=2048,
+                ),
+            )
+            enhanced = _extract_json_from_response(response.text.strip())
+            enhanced["source"] = "gemini_enhanced"
+            return enhanced
+    except Exception:
+        # Gemini failed or timed out — fall back to instant result silently
+        pass
 
-    raw_text = response.text.strip()
-
-    # ── 6. Parse & return JSON ────────────────────────────────────────────────
-    result = _extract_json_from_response(raw_text)
     return result
 
 

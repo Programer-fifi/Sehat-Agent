@@ -7,7 +7,21 @@ from response_combiner import combine_responses
 
 def fallback_intent(text):
     text = text.lower()
-    if any(word in text for word in ['emergency', 'heart attack', 'bleeding', 'stroke', 'dying', 'help fast', 'urgent', 'behosh']):
+    emergency_keywords = [
+        # English
+        "emergency", "heart attack", "bleeding", "stroke", "dying",
+        "help fast", "urgent", "unconscious", "heat stroke", "heatstroke",
+        "snake bite", "accident", "seizure", "head injury", "poison",
+        "breathing stopped", "ambulance",
+        # Roman Urdu / Urdu transliterated
+        "behosh", "behoshi", "behosh ho gaya", "behosh hogaya",
+        "hosh nahi", "hosh kho diya",
+        "dil ka daura", "saanp ne kaata", "hadsa",
+        "khoon nahi ruk raha", "fit", "fitting",
+        "sar pe chot", "zeher", "saans nahi",
+        "maut", "mar raha",
+    ]
+    if any(word in text for word in emergency_keywords):
         return "EMERGENCY"
     elif any(word in text for word in ['book', 'appointment', 'schedule']):
         return "APPOINTMENT_NEEDED"

@@ -27,13 +27,13 @@ def analyze():
     if not data:
         return jsonify({"error": "No JSON payload provided"}), 400
         
-    user_message = data.get("user_message")
+    user_message = data.get("message") or data.get("user_message")
     session_id = data.get("session_id")
-    report_image = data.get("report_image")
-    conversation_history = data.get("conversation_history", [])
+    report_image = data.get("image") or data.get("report_image")
+    conversation_history = data.get("history") or data.get("conversation_history") or []
     
     if not user_message or not session_id:
-        return jsonify({"error": "user_message and session_id are required"}), 400
+        return jsonify({"error": "message and session_id are required"}), 400
         
     response = process_request(user_message, session_id, report_image, conversation_history)
     session_traces[session_id] = response.get("agent_trace", [])
