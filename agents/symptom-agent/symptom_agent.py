@@ -30,13 +30,49 @@ def detect_language(text):
             return "roman_urdu"
     return "english"
 
+# Canonical display name for each department key
+DEPT_DISPLAY_NAMES = {
+    "cardiology":       "Cardiology",
+    "neurology":        "Neurology",
+    "orthopedics":      "Orthopedics",
+    "gastroenterology": "Gastroenterology",
+    "pulmonology":      "Pulmonology",
+    "dermatology":      "Dermatology",
+    "pediatrics":       "Pediatrics",
+    "gynecology":       "Gynecology",
+    "general_medicine": "General Medicine",
+}
+
+VALID_DEPT_KEYS = list(DEPT_DISPLAY_NAMES.keys())
+
+
+def normalize_department(raw: str) -> str:
+    """Convert any Gemini output format to a canonical display name."""
+    if not raw:
+        return "General Medicine"
+    raw_lower = raw.lower().strip()
+    # Direct key match
+    if raw_lower in DEPT_DISPLAY_NAMES:
+        return DEPT_DISPLAY_NAMES[raw_lower]
+    # Substring match against keys
+    for key, display in DEPT_DISPLAY_NAMES.items():
+        if key in raw_lower or raw_lower in key:
+            return display
+    # Substring match against display names
+    for key, display in DEPT_DISPLAY_NAMES.items():
+        if display.lower() in raw_lower or raw_lower in display.lower():
+            return display
+    return raw  # return as-is if nothing matches
+
+
 def keyword_fallback(user_message):
     text_lower = user_message.lower()
     for key, value in SYMPTOM_DEPARTMENT_MAP.items():
         for keyword in value.get("keywords", []):
             if keyword.lower() in text_lower:
                 return {
-                    "department": value["description"],
+                    # Return canonical display name, not the description
+                    "department": DEPT_DISPLAY_NAMES.get(key, value["description"]),
                     "urgency": value["urgency_levels"][0] if value["urgency_levels"] else "MEDIUM"
                 }
     return {
@@ -86,6 +122,8 @@ def analyze_symptoms(user_message, report_findings=None, conversation_history=No
         if report_findings:
             report_text = f"Medical report findings: {json.dumps(report_findings)}"
 
+        valid_keys_str = ", ".join(VALID_DEPT_KEYS)
+
         prompt = f"""
 You are Sehat Agent's medical symptom analyzer for Pakistani patients.
 You understand Urdu, Roman Urdu, and English.
@@ -97,18 +135,30 @@ Patient message: "{user_message}"
 {report_text}
 {history_text}
 
-Available departments: {departments_json}
+VALID DEPARTMENT KEYS (you MUST use EXACTLY one of these, lowercase as shown):
+{valid_keys_str}
+
+Department details for reference: {departments_json}
+
+Your task:
+1. Analyze ALL symptoms carefully.
+2. Consider MULTIPLE possible departments (differential diagnosis).
+3. Rule out less likely departments with reasoning.
+4. Choose the SINGLE most appropriate department key from the valid list above.
+5. Set urgency honestly — only CRITICAL if truly life-threatening.
 
 Respond ONLY in strict JSON (no markdown, no extra text):
 {{
-    "symptoms_summary": "brief summary of symptoms",
-    "combined_analysis": "analysis combining symptoms and report if available",
+    "symptoms_summary": "brief summary of reported symptoms",
+    "combined_analysis": "clinical analysis combining all symptoms",
     "urgency_level": "LOW or MEDIUM or HIGH or CRITICAL",
-    "recommended_department": "exact department name from map",
+    "recommended_department": "EXACT KEY from valid list above (e.g. cardiology, general_medicine)",
+    "differential_considered": ["other departments you considered"],
+    "ruled_out_reason": "why other departments were ruled out",
     "sub_department": "sub-specialty if applicable or null",
     "do_not_delay": true or false,
     "follow_up_needed": true or false,
-    "reasoning": "why this department was chosen",
+    "reasoning": "step-by-step reasoning for chosen department",
     "red_flags": ["any warning signs found"],
     "confidence": "HIGH or MEDIUM or LOW"
 }}
@@ -146,6 +196,10 @@ Respond ONLY in strict JSON (no markdown, no extra text):
         log(f"Follow-up needed: {'Yes' if needs_followup else 'No'}")
         log("JSON handoff ready -> Main Agent")
 
+        # Normalize department key to a proper display name
+        raw_dept = analysis.get("recommended_department", "general_medicine")
+        normalized_dept = normalize_department(raw_dept)
+
         return {
             "agent": "symptom_report_agent",
             "status": "needs_followup" if needs_followup else "complete",
@@ -154,7 +208,9 @@ Respond ONLY in strict JSON (no markdown, no extra text):
             "report_findings": report_findings,
             "combined_analysis": analysis.get("combined_analysis", ""),
             "urgency_level": analysis.get("urgency_level", "MEDIUM"),
-            "recommended_department": analysis.get("recommended_department", "General Medicine"),
+            "recommended_department": normalized_dept,
+            "differential_considered": analysis.get("differential_considered", []),
+            "ruled_out_reason": analysis.get("ruled_out_reason", ""),
             "sub_department": analysis.get("sub_department", None),
             "do_not_delay": analysis.get("do_not_delay", False),
             "follow_up_question": follow_up if needs_followup else None,

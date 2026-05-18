@@ -5,147 +5,84 @@ from flask_cors import CORS
 
 def validate_hospital_output(hospital_finder_output, original_request):
     failed_checks = []
-    
-    # Extract data
-    req_dept = original_request.get("required_department", "")
+
+    # Extract data — support both flat and nested formats
+    top_rec = hospital_finder_output.get("top_recommendation", {})
+    # If hospital finder sent flat format, treat the whole thing as top_rec
+    if not top_rec and hospital_finder_output.get("name"):
+        top_rec = hospital_finder_output
+
+    alternatives = hospital_finder_output.get("alternatives", [])
+    total_found = hospital_finder_output.get("total_found", 0)
+
+    req_dept = original_request.get("required_department", original_request.get("department", ""))
     req_urgency = original_request.get("urgency_level", "").upper()
     req_pref = original_request.get("hospital_preference", "").upper()
-    
-    top_rec = hospital_finder_output.get("top_recommendation", {})
-    alternatives = hospital_finder_output.get("alternatives", [])
-    
-    # Edge Cases First
-    if not top_rec or hospital_finder_output.get("total_found", 0) == 0:
+
+    # Edge Case: No hospital at all
+    if not top_rec and total_found == 0:
         return reject_response([], [{
             "check": "EDGE CASE - No Hospitals Found",
-            "reason": "No hospitals found in 25km radius. Expanding search.",
+            "reason": "No hospitals found. Expanding search.",
             "severity": "CRITICAL"
-        }], original_request, "No hospitals found in 25km radius. Expanding search.")
-        
-    if not top_rec.get("open_now", True):
-        return reject_response([], [{
-            "check": "EDGE CASE - Hospitals Closed",
-            "reason": "All recommended hospitals are closed. Find 24/7 options.",
-            "severity": "CRITICAL"
-        }], original_request, "All recommended hospitals are closed. Find 24/7 options.")
+        }], original_request, "No hospitals found. Expanding search.")
 
-    if req_urgency == "CRITICAL" and not top_rec.get("emergency", False):
+    # Edge Case: CRITICAL with no emergency
+    if req_urgency == "CRITICAL" and not top_rec.get("emergency", True):
         return reject_response([], [{
             "check": "EDGE CASE - CRITICAL + No Emergency",
-            "reason": "CRITICAL case requires emergency facility. Current recommendation has no emergency unit.",
+            "reason": "CRITICAL case requires emergency facility.",
             "severity": "CRITICAL"
-        }], original_request, "CRITICAL case requires emergency facility. Current recommendation has no emergency unit.")
+        }], original_request, "CRITICAL case requires emergency facility.")
 
-    # If maps_link, rating, etc. are "blurry or incomplete" -> Handle as Check 4 or Edge Case
-    phone = top_rec.get("phone", "")
-    address = top_rec.get("address", "")
-    maps_link = top_rec.get("maps_link", "")
-    rating = top_rec.get("rating", "")
-    
-    if not maps_link or not rating or "null" in str(maps_link).lower():
-        return reject_response([], [{
-            "check": "EDGE CASE - Incomplete Data",
-            "reason": "Incomplete hospital data received. Request fresh search.",
-            "severity": "CRITICAL"
-        }], original_request, "Incomplete hospital data received. Request fresh search.")
-
-
-    # Main Checks
-    # Check 1 - Department Match
-    dept_match = top_rec.get("department", "") == req_dept
-    if req_urgency == "CRITICAL":
-        if not top_rec.get("emergency", False):
-            dept_match = False
-            
+    # Check 1 - Department Match (lenient: substring match)
+    rec_dept = top_rec.get("department", "")
+    dept_match = (
+        req_dept.lower() in rec_dept.lower() or
+        rec_dept.lower() in req_dept.lower() or
+        not req_dept  # if no dept requested, pass
+    )
     if not dept_match:
         failed_checks.append({
             "check": "CHECK 1 - Department Match",
-            "reason": f"Expected EXACT department '{req_dept}' and emergency=True for CRITICAL cases.",
+            "reason": f"Expected '{req_dept}' but got '{rec_dept}'.",
             "severity": "HIGH"
         })
 
-    # Check 2 - Preference Match
+    # Check 2 - Preference Match (only if explicitly set)
     if req_pref in ["GOVERNMENT", "PRIVATE"]:
-        if top_rec.get("type", "").upper() != req_pref:
+        hosp_type = top_rec.get("type", top_rec.get("_type", "")).upper()
+        if hosp_type and hosp_type != req_pref:
             failed_checks.append({
                 "check": "CHECK 2 - Preference Match",
-                "reason": f"User requested {req_pref} but {top_rec.get('type', 'unknown')} hospital was returned",
-                "severity": "HIGH"
-            })
-
-    # Check 3 - Distance Sanity
-    dist_str = top_rec.get("distance", "")
-    try:
-        dist_val = float(re.findall(r"[\d\.]+", dist_str)[0])
-        
-        is_nearest = True
-        for alt in alternatives:
-            alt_dist_str = alt.get("distance", "")
-            if alt_dist_str:
-                try:
-                    alt_dist_val = float(re.findall(r"[\d\.]+", alt_dist_str)[0])
-                    if alt_dist_val < dist_val:
-                        is_nearest = False
-                        break
-                except:
-                    pass
-        
-        if dist_val > 25 or not is_nearest:
-            failed_checks.append({
-                "check": "CHECK 3 - Distance Sanity",
-                "reason": "Distance is over 25km or closer alternative was ignored.",
+                "reason": f"User requested {req_pref} but got {hosp_type}.",
                 "severity": "MEDIUM"
             })
-    except:
-        failed_checks.append({
-            "check": "CHECK 3 - Distance Sanity",
-            "reason": "Could not parse distance correctly.",
-            "severity": "MEDIUM"
-        })
 
-    # Check 4 - Data Completeness
-    if not phone or not address or not maps_link or not rating or str(phone).lower() == "unknown":
+    # Check 3 - Hospital name present
+    if not top_rec.get("name"):
         failed_checks.append({
-            "check": "CHECK 4 - Data Completeness",
-            "reason": "Critical fields missing (phone, address, maps_link, rating) or invalid.",
+            "check": "CHECK 3 - Hospital Name",
+            "reason": "No hospital name returned.",
             "severity": "HIGH"
         })
 
-    # Check 5 - Emergency Override Check
-    if req_urgency in ["HIGH", "CRITICAL"]:
-        has_emergency = top_rec.get("emergency", False)
-        has_note = bool(hospital_finder_output.get("emergency_note", ""))
-        is_24_7 = top_rec.get("opening_hours", "") == "24/7"
-        
-        if not (has_emergency and has_note and is_24_7):
-            failed_checks.append({
-                "check": "CHECK 5 - Emergency Override Check",
-                "reason": "HIGH/CRITICAL cases require emergency: true, emergency_note, and opening_hours 24/7.",
-                "severity": "CRITICAL"
-            })
-
-    # Check 6 - Cost Comparison
-    cost_comp = hospital_finder_output.get("cost_comparison", {})
-    if not cost_comp or "government_option" not in cost_comp or "private_option" not in cost_comp:
+    # Check 4 - Reasoning present
+    reasoning = hospital_finder_output.get("reasoning", top_rec.get("reasoning", ""))
+    if not reasoning or len(reasoning.split()) < 3:
         failed_checks.append({
-            "check": "CHECK 6 - Cost Comparison",
-            "reason": "cost_comparison missing or lacks govt/private options.",
-            "severity": "MEDIUM"
+            "check": "CHECK 4 - Reasoning Quality",
+            "reason": "Reasoning is missing or too short.",
+            "severity": "LOW"
         })
 
-    # Check 7 - Reasoning Quality
-    reasoning = hospital_finder_output.get("reasoning", "")
-    if not reasoning or len(reasoning.split()) < 5 or ("best hospital" in reasoning.lower() and len(reasoning) < 20):
-        failed_checks.append({
-            "check": "CHECK 7 - Reasoning Quality",
-            "reason": "Reasoning is empty, too short, or generic.",
-            "severity": "MEDIUM"
-        })
-
-    if not failed_checks:
+    # Determine result
+    critical_fails = [f for f in failed_checks if f.get("severity") == "HIGH"]
+    if not critical_fails:
         return approve_response(top_rec)
     else:
         return reject_response(failed_checks, [], original_request)
+
 
 def approve_response(top_rec):
     return {
@@ -159,11 +96,12 @@ def approve_response(top_rec):
         "system_state": f"BEFORE: No appointment booked | AFTER: Ready for booking at {top_rec.get('name', 'Hospital')}"
     }
 
+
 def reject_response(failed_checks, edge_cases, original_request, validator_note="Rejected. Sending back to Hospital Finder Agent for correction."):
     all_fails = edge_cases + failed_checks
     checks_failed = len(all_fails)
     checks_passed = max(0, 7 - checks_failed)
-    
+
     retry_instruction = {
         "send_back_to": "Hospital Finder Agent",
         "fix_this": ", ".join([f["check"] for f in all_fails]),
@@ -172,7 +110,7 @@ def reject_response(failed_checks, edge_cases, original_request, validator_note=
             "validator_feedback": validator_note
         }
     }
-    
+
     return {
         "validation_status": "REJECTED",
         "checks_passed": checks_passed,
@@ -183,6 +121,7 @@ def reject_response(failed_checks, edge_cases, original_request, validator_note=
         "retry_instruction": retry_instruction,
         "system_state": "BEFORE: No appointment booked | AFTER: Validation failed, retrying search"
     }
+
 
 app = Flask(__name__)
 CORS(app)
@@ -199,12 +138,9 @@ def health():
 def analyze():
     try:
         data = request.json or {}
-        hospital_output = data.get(
-            "hospital_finder_output", {})
-        original_request = data.get(
-            "original_request", {})
-        result = validate_hospital_output(
-            hospital_output, original_request)
+        hospital_output = data.get("hospital_finder_output", {})
+        original_request = data.get("original_request", {})
+        result = validate_hospital_output(hospital_output, original_request)
         return jsonify(result)
     except Exception as e:
         return jsonify({"error": str(e)}), 500

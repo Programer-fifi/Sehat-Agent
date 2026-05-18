@@ -1,8 +1,18 @@
 EMERGENCY_KEYWORDS = [
-    "severe chest pain", "difficulty breathing", "unconscious", 
-    "heavy bleeding", "sudden weakness", "stroke", "heart attack",
+    # English
+    "severe chest pain", "chest pain", "difficulty breathing", "can't breathe",
+    "unconscious", "heavy bleeding", "sudden weakness", "stroke", "heart attack",
     "suicidal", "severe burn", "poisoning", "seizure", "choking",
-    "loss of consciousness", "can't breathe", "coughing blood"
+    "loss of consciousness", "coughing blood", "ambulance", "dying",
+    "head injury", "snake bite", "accident", "heat stroke", "heatstroke",
+    "breathing stopped",
+    # Roman Urdu
+    "behosh", "behoshi", "behosh ho gaya", "behosh hogaya",
+    "hosh nahi", "hosh kho diya",
+    "dil ka daura", "saanp ne kaata", "hadsa",
+    "khoon nahi ruk raha", "fit", "fitting",
+    "sar pe chot", "zeher", "saans nahi",
+    "maut", "mar raha", "mar rahi",
 ]
 
 def get_follow_up_question(symptoms, context=""):
