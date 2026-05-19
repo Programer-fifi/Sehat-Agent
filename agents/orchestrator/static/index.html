@@ -8,7 +8,6 @@
     <link
         href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@600;700;800&display=swap"
         rel="stylesheet">
-    <script src="https://unpkg.com/@lottiefiles/lottie-player@latest/dist/lottie-player.js"></script>
     <style>
         :root {
             --bg-welcome: linear-gradient(160deg, #064E3B 0%, #065F46 30%, #059669 70%, #34D399 100%);
@@ -93,7 +92,7 @@
             }
         }
 
-        /* Welcome Screen */
+        /* ── Welcome Screen ── */
         #welcome-screen {
             background: var(--bg-welcome);
             padding: 0 24px;
@@ -315,7 +314,7 @@
             flex-shrink: 0;
         }
 
-        /* Stage 1 */
+        /* ── Stage 1 ── */
         #stage-1 {
             padding: 0;
             background: var(--bg-mint);
@@ -410,12 +409,22 @@
             fill: var(--primary);
         }
 
+        .btn-back {
+            background: none;
+            border: none;
+            font-size: 20px;
+            color: var(--primary-dark);
+            cursor: pointer;
+            padding-right: 12px;
+            display: flex;
+            align-items: center;
+        }
+
         .st-main {
             flex: 1;
-            padding: 24px 16px;
+            padding: 20px 16px 16px;
             display: flex;
             flex-direction: column;
-            justify-content: center;
             overflow-y: auto;
         }
 
@@ -424,7 +433,7 @@
             font-size: 22px;
             font-weight: bold;
             text-align: center;
-            margin-bottom: 8px;
+            margin-bottom: 6px;
             font-family: 'Plus Jakarta Sans', sans-serif;
         }
 
@@ -432,21 +441,21 @@
             color: var(--text-secondary);
             font-size: 14px;
             text-align: center;
-            margin-bottom: 24px;
+            margin-bottom: 16px;
         }
 
         .s1-textarea {
             width: 100%;
-            min-height: 120px;
+            min-height: 110px;
             background: white;
             border: 1.5px solid var(--border-light);
             border-radius: 16px;
-            padding: 16px;
+            padding: 14px 16px;
             font-family: 'Inter', sans-serif;
             font-size: 15px;
             color: var(--primary-dark);
             resize: none;
-            margin-bottom: 16px;
+            margin-bottom: 14px;
             transition: border-color 0.2s;
         }
 
@@ -462,7 +471,7 @@
         .s1-options-row {
             display: flex;
             gap: 12px;
-            margin-bottom: 24px;
+            margin-bottom: 14px;
         }
 
         .btn-upload {
@@ -541,6 +550,91 @@
             border-color: var(--success);
         }
 
+        /* ── City / Area Selector ── */
+        .location-selector {
+            background: white;
+            border: 1.5px solid var(--border-light);
+            border-radius: 16px;
+            padding: 14px 16px;
+            margin-bottom: 14px;
+            transition: border-color 0.2s;
+        }
+
+        .location-selector.has-selection {
+            border-color: var(--success);
+        }
+
+        .loc-label {
+            font-size: 12px;
+            font-weight: 700;
+            color: var(--primary);
+            letter-spacing: 0.3px;
+            margin-bottom: 10px;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            flex-wrap: wrap;
+        }
+
+        .loc-label-sub {
+            font-weight: 500;
+            text-transform: none;
+            letter-spacing: 0;
+            color: var(--text-secondary);
+            font-size: 11px;
+        }
+
+        .loc-label .loc-required {
+            background: #FEE2E2;
+            color: #DC2626;
+            font-size: 9px;
+            padding: 2px 6px;
+            border-radius: 6px;
+            font-weight: 700;
+            letter-spacing: 0;
+            text-transform: none;
+        }
+
+        .loc-dropdowns {
+            display: flex;
+            gap: 10px;
+        }
+
+        .loc-select {
+            flex: 1;
+            padding: 10px 10px;
+            border: 1.5px solid var(--border-light);
+            border-radius: 10px;
+            background: white;
+            color: var(--text-secondary);
+            font-size: 13px;
+            font-family: 'Inter', sans-serif;
+            font-weight: 500;
+            cursor: pointer;
+            transition: border-color 0.2s, color 0.2s;
+            -webkit-appearance: auto;
+            appearance: auto;
+            min-width: 0;
+        }
+
+        .loc-select:focus {
+            border-color: var(--success);
+            outline: none;
+        }
+
+        .loc-select:disabled {
+            background: #f8fafb;
+            color: var(--text-placeholder);
+            cursor: not-allowed;
+            opacity: 0.65;
+        }
+
+        .loc-select.has-value {
+            border-color: var(--success);
+            color: var(--primary-dark);
+            font-weight: 600;
+        }
+
         .btn-analyze {
             width: 100%;
             height: 54px;
@@ -557,12 +651,12 @@
             align-items: center;
             box-shadow: 0 8px 24px rgba(5, 150, 105, 0.3);
             transition: transform 0.1s, opacity 0.2s;
-            margin-bottom: 24px;
+            margin-bottom: 0;
             flex-shrink: 0;
         }
 
         .btn-analyze:disabled {
-            opacity: 0.5;
+            opacity: 0.45;
             cursor: not-allowed;
             box-shadow: none;
         }
@@ -571,40 +665,7 @@
             transform: scale(0.98);
         }
 
-        .s1-chips-container {
-            width: 100%;
-        }
-
-        .sc-label {
-            color: var(--text-secondary);
-            font-size: 12px;
-            margin-bottom: 8px;
-        }
-
-        .sc-scroll {
-            display: flex;
-            gap: 8px;
-            overflow-x: auto;
-            padding-bottom: 8px;
-        }
-
-        .sc-scroll::-webkit-scrollbar {
-            display: none;
-        }
-
-        .s1-chip {
-            white-space: nowrap;
-            padding: 8px 16px;
-            background: white;
-            border: 1px solid var(--primary);
-            color: var(--primary);
-            border-radius: 20px;
-            font-size: 13px;
-            font-weight: 500;
-            cursor: pointer;
-        }
-
-        /* Stage 2 */
+        /* ── Stage 2 ── */
         #stage-2 {
             background: var(--bg-mint);
         }
@@ -836,22 +897,11 @@
             letter-spacing: 1px;
         }
 
-        /* Stage 3 */
+        /* ── Stage 3 ── */
         #stage-3 {
             background: var(--bg-mint);
-            padding-bottom: 120px;
+            padding-bottom: 80px;
             overflow-y: auto;
-        }
-
-        .st-header .btn-back {
-            background: none;
-            border: none;
-            font-size: 20px;
-            color: var(--primary-dark);
-            cursor: pointer;
-            padding-right: 12px;
-            display: flex;
-            align-items: center;
         }
 
         .s3-summary-bar {
@@ -864,7 +914,7 @@
         }
 
         .s3-urgency-pill {
-            padding: 4px 12px;
+            padding: 6px 14px;
             border-radius: 12px;
             color: white;
             font-size: 12px;
@@ -886,10 +936,10 @@
 
         .s3-urgency-pill.CRITICAL {
             background: var(--danger);
-            animation: urgencyPulse 1.5s infinite;
+            animation: critPulse 1s infinite;
         }
 
-        @keyframes urgencyPulse {
+        @keyframes critPulse {
 
             0%,
             100% {
@@ -919,26 +969,150 @@
             border-radius: 16px;
             padding: 16px;
             box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+            opacity: 0;
+            transform: translateY(12px);
+            animation: cardIn 0.4s ease forwards;
+        }
+
+        @keyframes cardIn {
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
         }
 
         .r-card.sym {
             border-left: 3px solid var(--success);
+            animation-delay: 0.05s;
         }
 
         .r-card.dep {
             border-left: 3px solid #0EA5E9;
+            animation-delay: 0.15s;
         }
 
         .r-card.hos {
             border-left: 3px solid #8B5CF6;
+            animation-delay: 0.25s;
         }
 
         .r-card.cost {
             border-left: 3px solid var(--warning);
+            animation-delay: 0.35s;
         }
 
         .r-card.app {
             border-left: 3px solid var(--success);
+            animation-delay: 0.45s;
+        }
+
+        .r-card.state {
+            border-left: 3px solid #6366F1;
+            animation-delay: 0.52s;
+            padding: 0;
+            overflow: hidden;
+        }
+
+        .state-header {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 14px 16px 10px;
+        }
+
+        .state-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 0;
+            border-top: 1px solid var(--border-light);
+        }
+
+        .state-col {
+            padding: 12px 14px;
+        }
+
+        .state-col:first-child {
+            border-right: 1px solid var(--border-light);
+        }
+
+        .state-col-label {
+            font-size: 10px;
+            font-weight: 700;
+            letter-spacing: 1px;
+            text-transform: uppercase;
+            margin-bottom: 8px;
+        }
+
+        .state-col-label.before {
+            color: #F97316;
+        }
+
+        .state-col-label.after {
+            color: var(--success);
+        }
+
+        .state-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
+            padding: 4px 10px;
+            border-radius: 20px;
+            font-size: 11px;
+            font-weight: 700;
+            margin-bottom: 6px;
+        }
+
+        .state-badge.available {
+            background: #FEF3C7;
+            color: #92400E;
+            border: 1px solid #FDE68A;
+        }
+
+        .state-badge.booked {
+            background: #D1FAE5;
+            color: #065F46;
+            border: 1px solid #A7F3D0;
+        }
+
+        .state-badge.emergency-badge {
+            background: #FEE2E2;
+            color: #991B1B;
+            border: 1px solid #FECACA;
+        }
+
+        .state-detail {
+            font-size: 11px;
+            color: var(--text-secondary);
+            line-height: 1.5;
+        }
+
+        .state-detail strong {
+            color: var(--text-primary);
+            font-weight: 600;
+        }
+
+        .state-arrow {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 8px;
+            background: var(--bg-mint);
+            border-top: 1px solid var(--border-light);
+            font-size: 11px;
+            color: var(--text-secondary);
+            gap: 6px;
+        }
+
+        .state-arrow-icon {
+            width: 20px;
+            height: 20px;
+            background: #6366F1;
+            border-radius: 50%;
+            display: inline-flex;
+            justify-content: center;
+            align-items: center;
+            color: white;
+            font-size: 10px;
         }
 
         .r-card.disc {
@@ -949,6 +1123,7 @@
             display: flex;
             gap: 8px;
             align-items: flex-start;
+            animation-delay: 0.62s;
         }
 
         .rc-header {
@@ -984,6 +1159,7 @@
             display: flex;
             align-items: center;
             gap: 8px;
+            flex-wrap: wrap;
         }
 
         .rc-badge {
@@ -996,40 +1172,29 @@
             border: 1px solid var(--border-light);
         }
 
-        .pass-toggle {
+        .pp-toggle {
             color: var(--primary);
             font-size: 12px;
-            font-weight: 600;
             cursor: pointer;
             margin-top: 8px;
-            display: inline-block;
+            font-weight: 600;
         }
 
-        .pass-content {
+        .pp-content {
             display: none;
-            background: #f8f8f8;
+            margin-top: 10px;
+            background: var(--bg-mint);
             border-radius: 8px;
             padding: 12px;
-            margin-top: 8px;
-            font-family: monospace;
-            font-size: 11px;
-            white-space: pre-wrap;
-            color: #333;
-            line-height: 1.5;
-        }
-
-        .pass-content.open {
-            display: block;
-        }
-
-        .sms-box {
-            background: #e8f5e9;
-            border-radius: 8px;
-            padding: 10px 12px;
-            margin-top: 8px;
             font-size: 12px;
-            color: #2e7d32;
-            line-height: 1.4;
+            color: var(--text-primary);
+            white-space: pre-wrap;
+            font-family: monospace;
+            line-height: 1.6;
+        }
+
+        .pp-content.open {
+            display: block;
         }
 
         .s3-followup {
@@ -1081,16 +1246,11 @@
             font-weight: bold;
             cursor: pointer;
             transition: 0.2s;
-            font-size: 14px;
+            font-family: 'Plus Jakarta Sans', sans-serif;
         }
 
         .btn-fu-send:active {
             transform: scale(0.98);
-        }
-
-        .btn-fu-send:disabled {
-            opacity: 0.5;
-            cursor: not-allowed;
         }
 
         .s3-action-bar {
@@ -1135,22 +1295,32 @@
             transform: scale(0.98);
         }
 
-        /* Emergency Screen */
+        /* ── Emergency Screen ── */
         #emergency-screen {
             background: linear-gradient(180deg, #1A0505 0%, #2D0A0A 100%);
             box-shadow: inset 0 0 80px rgba(239, 68, 68, 0.25);
-            z-index: 9999;
+            position: fixed;
+            top: 0;
+            left: 50%;
+            transform: translateX(-50%) translateY(-100%);
+            width: 100%;
+            max-width: 480px;
+            height: 100%;
+            display: flex;
+            flex-direction: column;
             justify-content: center;
             align-items: center;
             text-align: center;
             padding: 32px;
-            transform: translateY(-100%);
             transition: transform 0.4s ease;
+            z-index: 999;
             opacity: 1;
+            pointer-events: none;
         }
 
-        #emergency-screen.active {
-            transform: translateY(0);
+        #emergency-screen.show {
+            transform: translateX(-50%) translateY(0);
+            pointer-events: all;
         }
 
         .em-pulse-container {
@@ -1246,7 +1416,7 @@
             cursor: pointer;
         }
 
-        /* Trace Panel */
+        /* ── Trace Panel ── */
         .tp-backdrop {
             position: absolute;
             top: 0;
@@ -1254,7 +1424,7 @@
             width: 100%;
             height: 100%;
             background: rgba(0, 0, 0, 0.5);
-            z-index: 100;
+            z-index: 200;
             opacity: 0;
             pointer-events: none;
             transition: opacity 0.3s;
@@ -1272,7 +1442,7 @@
             width: 300px;
             height: 100%;
             background: #050F0A;
-            z-index: 101;
+            z-index: 201;
             transition: transform 0.3s ease;
             display: flex;
             flex-direction: column;
@@ -1377,160 +1547,6 @@
         .hidden {
             display: none !important;
         }
-
-        /* Quota Widget */
-        #quota-btn {
-            position: fixed;
-            bottom: 80px;
-            left: 16px;
-            width: 32px;
-            height: 32px;
-            border-radius: 50%;
-            background: rgba(0, 0, 0, 0.65);
-            border: none;
-            color: white;
-            font-size: 15px;
-            cursor: pointer;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            z-index: 999;
-            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
-            transition: transform 0.2s;
-        }
-
-        #quota-btn:hover {
-            transform: scale(1.1);
-        }
-
-        #quota-panel {
-            position: fixed;
-            bottom: 120px;
-            left: 16px;
-            width: 220px;
-            background: rgba(15, 15, 15, 0.92);
-            backdrop-filter: blur(10px);
-            -webkit-backdrop-filter: blur(10px);
-            border-radius: 12px;
-            padding: 12px;
-            z-index: 999;
-            display: none;
-            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
-            border: 1px solid rgba(255, 255, 255, 0.08);
-            animation: fadeIn 0.2s ease;
-        }
-
-        #quota-panel.open {
-            display: block;
-        }
-
-        .qp-header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: 10px;
-        }
-
-        .qp-title {
-            color: white;
-            font-size: 12px;
-            font-weight: 700;
-            font-family: 'Plus Jakarta Sans', sans-serif;
-        }
-
-        .qp-close {
-            background: none;
-            border: none;
-            color: rgba(255, 255, 255, 0.5);
-            font-size: 16px;
-            cursor: pointer;
-            line-height: 1;
-            padding: 0;
-        }
-
-        .qp-close:hover {
-            color: white;
-        }
-
-        .qp-row {
-            display: flex;
-            align-items: center;
-            gap: 8px;
-            padding: 6px 0;
-            border-bottom: 1px solid rgba(255, 255, 255, 0.06);
-        }
-
-        .qp-row:last-of-type {
-            border-bottom: none;
-        }
-
-        .qp-dot {
-            width: 8px;
-            height: 8px;
-            border-radius: 50%;
-            flex-shrink: 0;
-            background: #6B7280;
-        }
-
-        .qp-dot.ok {
-            background: #10B981;
-            box-shadow: 0 0 4px #10B981;
-        }
-
-        .qp-dot.slow {
-            background: #F59E0B;
-            box-shadow: 0 0 4px #F59E0B;
-        }
-
-        .qp-dot.error {
-            background: #EF4444;
-            box-shadow: 0 0 4px #EF4444;
-        }
-
-        .qp-info {
-            flex: 1;
-        }
-
-        .qp-name {
-            color: rgba(255, 255, 255, 0.9);
-            font-size: 11px;
-            font-weight: 600;
-            line-height: 1.2;
-        }
-
-        .qp-meta {
-            color: rgba(255, 255, 255, 0.4);
-            font-size: 10px;
-            line-height: 1.3;
-        }
-
-        .qp-fallback {
-            color: #EF4444;
-            font-size: 9px;
-            font-weight: 600;
-        }
-
-        .qp-footer {
-            margin-top: 10px;
-            display: flex;
-            justify-content: center;
-        }
-
-        .qp-reset {
-            background: rgba(255, 255, 255, 0.08);
-            border: 1px solid rgba(255, 255, 255, 0.15);
-            color: rgba(255, 255, 255, 0.6);
-            font-size: 10px;
-            padding: 4px 12px;
-            border-radius: 6px;
-            cursor: pointer;
-            transition: 0.2s;
-        }
-
-        .qp-reset:hover {
-            background: rgba(255, 255, 255, 0.15);
-            color: white;
-        }
     </style>
 </head>
 
@@ -1605,11 +1621,16 @@
             <div class="st-main">
                 <div class="s1-title">How can we help you today?</div>
                 <div class="s1-sub">Describe your symptoms or ask anything health related</div>
+
+                <!-- Symptoms textarea -->
                 <textarea id="s1-input" class="s1-textarea"
                     placeholder="e.g. Mujhe 3 din se bukhar hai aur sar mein dard hai...&#10;or: I have chest pain since morning&#10;or: Mere bachy ko khansi hai"
                     oninput="checkS1Input()"></textarea>
+
                 <input type="file" id="s1-file" class="hidden" accept="image/*,application/pdf"
                     onchange="handleFileSelect()">
+
+                <!-- Upload + Language row -->
                 <div class="s1-options-row">
                     <div class="btn-upload" onclick="document.getElementById('s1-file').click()">
                         <div class="bu-top">
@@ -1623,31 +1644,42 @@
                     </div>
                     <div class="s1-lang">
                         <div class="lang-row">
-                            <div class="lang-pill" onclick="setLang('en', event)">🇬🇧 English</div>
-                            <div class="lang-pill active" onclick="setLang('ur-rom', event)">🇵🇰 Roman Urdu</div>
+                            <div class="lang-pill" onclick="setLang('en', this)">🇬🇧 English</div>
+                            <div class="lang-pill active" onclick="setLang('ur-rom', this)">🇵🇰 Roman Urdu</div>
                         </div>
                         <div class="lang-row">
-                            <div class="lang-pill" onclick="setLang('ur', event)">اردو Urdu</div>
+                            <div class="lang-pill" onclick="setLang('ur', this)">اردو Urdu</div>
                         </div>
                     </div>
                 </div>
-                <button id="btn-analyze" class="btn-analyze" onclick="startAnalysis()" disabled>Analyze with AI Agents
-                    →</button>
-                <div class="s1-chips-container">
-                    <div class="sc-label">Or try:</div>
-                    <div class="sc-scroll">
-                        <div class="s1-chip" onclick="fillInput('I have a high fever and headache')">🤒 Fever &amp;
-                            headache</div>
-                        <div class="s1-chip" onclick="fillInput('I am experiencing severe chest pain')">❤️ Chest pain
-                        </div>
-                        <div class="s1-chip" onclick="fillInput('I have severe stomach ache and nausea')">🤢 Stomach
-                            issues</div>
-                        <div class="s1-chip" onclick="fillInput('My child has continuous cough')">👶 Child symptoms
-                        </div>
-                        <div class="s1-chip" onclick="document.getElementById('s1-file').click()">📋 Analyze my report
-                        </div>
+
+                <!-- City / Area Location Selector (MANDATORY) -->
+                <div class="location-selector" id="location-selector">
+                    <div class="loc-label">
+                        📍 Your Location
+                        <span class="loc-label-sub">(helps find nearest hospital)</span>
+                        <span class="loc-required">Required</span>
+                    </div>
+                    <div class="loc-dropdowns">
+                        <select id="city-select" class="loc-select" onchange="onCityChange(this)">
+                            <option value="">🏙️ Select City</option>
+                            <option value="karachi">Karachi</option>
+                            <option value="lahore">Lahore</option>
+                            <option value="islamabad">Islamabad</option>
+                            <option value="rawalpindi">Rawalpindi</option>
+                            <option value="peshawar">Peshawar</option>
+                        </select>
+                        <select id="area-select" class="loc-select" onchange="onAreaChange(this)" disabled>
+                            <option value="">-- Select Area --</option>
+                        </select>
                     </div>
                 </div>
+
+                <!-- Analyze Button -->
+                <button id="btn-analyze" class="btn-analyze" onclick="startAnalysis()" disabled>
+                    Analyze with AI Agents →
+                </button>
+
             </div>
         </div>
 
@@ -1721,7 +1753,7 @@
                     <div class="fu-label">💬 Follow-up Question:</div>
                     <div class="fu-q" id="fu-q-text"></div>
                     <textarea class="fu-textarea" id="fu-input" placeholder="Type your answer here..."></textarea>
-                    <button class="btn-fu-send" id="btn-fu-send" onclick="sendFollowUp()">Send Answer →</button>
+                    <button class="btn-fu-send" onclick="sendFollowUp()">Send Answer →</button>
                 </div>
             </div>
             <div class="s3-action-bar">
@@ -1731,7 +1763,7 @@
         </div>
 
         <!-- Emergency Screen -->
-        <div id="emergency-screen" class="screen">
+        <div id="emergency-screen">
             <div class="em-pulse-container">
                 <div class="em-pulse-circle">⚠️</div>
             </div>
@@ -1747,7 +1779,7 @@
             <button class="btn-em-out" onclick="closeEmergency()">View Details</button>
         </div>
 
-        <!-- Trace Panel -->
+        <!-- Judge Trace Panel -->
         <div class="tp-backdrop" id="trace-backdrop" onclick="toggleTrace()"></div>
         <div id="trace-panel">
             <div class="tp-header">
@@ -1760,50 +1792,67 @@
             <div class="tp-stats" id="trace-stats">
                 <div class="t-card">
                     <div class="t-lbl">Agents</div>
-                    <div class="t-val">0</div>
+                    <div class="t-val" id="ts-agents">0</div>
                 </div>
                 <div class="t-card">
                     <div class="t-lbl">Time</div>
-                    <div class="t-val">0.0s</div>
+                    <div class="t-val" id="ts-time">0.0s</div>
                 </div>
                 <div class="t-card">
                     <div class="t-lbl">Intent</div>
-                    <div class="t-val" style="font-size:10px;">N/A</div>
+                    <div class="t-val" id="ts-intent" style="font-size:10px;">N/A</div>
                 </div>
             </div>
             <div class="tp-content" id="trace-content"></div>
             <div class="tp-footer">Powered by Google Antigravity</div>
         </div>
-    </div>
 
-    <!-- Quota Widget -->
-    <button id="quota-btn" onclick="toggleQuotaPanel()" title="API Quota Tracker">📊</button>
-    <div id="quota-panel">
-        <div class="qp-header">
-            <div class="qp-title">📊 API Quota Tracker</div>
-            <button class="qp-close" onclick="toggleQuotaPanel()">✕</button>
-        </div>
-        <div id="qp-rows"></div>
-        <div class="qp-footer">
-            <button class="qp-reset" onclick="resetQuotaStats()">Reset Stats</button>
-        </div>
-    </div>
+    </div><!-- end app-container -->
 
     <script>
         const MOCK_MODE = false;
+
+        // ── City → Areas mapping ───────────────────────────────────
+        const CITY_AREAS = {
+            karachi: [
+                'Saddar', 'Clifton', 'DHA Phase 1-6', 'Gulshan-e-Iqbal', 'North Nazimabad',
+                'Nazimabad', 'FB Area', 'PECHS', 'Korangi', 'Landhi', 'Malir',
+                'Orangi Town', 'Baldia', 'Lyari', 'Kemari', 'Gulberg', 'Liaquatabad',
+                'New Karachi', 'Surjani Town', 'Scheme 33', 'Shah Faisal Colony', 'Johar'
+            ],
+            lahore: [
+                'Gulberg', 'DHA Lahore', 'Johar Town', 'Iqbal Town', 'Model Town',
+                'Garden Town', 'Wapda Town', 'Cantt', 'Bahria Town', 'Faisal Town',
+                'Township', 'Shadman', 'Samanabad', 'Ravi Road', 'Shalimar'
+            ],
+            islamabad: [
+                'F-7 / F-8', 'G-10 / G-11', 'Blue Area / G-6', 'I-8 / I-9',
+                'DHA Islamabad', 'Bahria Town', 'G-8 / G-9', 'F-10 / F-11', 'E-7', 'Bani Gala'
+            ],
+            rawalpindi: [
+                'Saddar', 'Satellite Town', 'Murree Road', 'Chaklala', 'Bahria Town',
+                'DHA Rawalpindi', 'Raja Bazaar', 'Gulzar-e-Quaid', 'Adyala Road', 'Taxila'
+            ],
+            peshawar: [
+                'University Town', 'Hayatabad', 'Saddar', 'Cantonment', 'Ring Road',
+                'Gulbahar', 'Firdous', 'Kohat Road', 'Warsak Road', 'City Centre'
+            ]
+        };
+
         let sessionId = "session_" + Math.random().toString(36).substr(2, 9);
         let conversationHistory = [];
         let selectedLang = 'ur-rom';
         let lastResponseData = null;
+        let selectedCity = null;
+        let selectedArea = null;
 
         const screens = {
             welcome: document.getElementById('welcome-screen'),
             stage1: document.getElementById('stage-1'),
             stage2: document.getElementById('stage-2'),
-            stage3: document.getElementById('stage-3'),
-            emergency: document.getElementById('emergency-screen')
+            stage3: document.getElementById('stage-3')
         };
-
+        const emergencyScreen = document.getElementById('emergency-screen');
         const inputField = document.getElementById('s1-input');
         const fileInput = document.getElementById('s1-file');
         const btnAnalyze = document.getElementById('btn-analyze');
@@ -1813,7 +1862,7 @@
 
         function switchScreen(name) {
             Object.values(screens).forEach(s => s.classList.remove('active'));
-            screens[name].classList.add('active');
+            if (screens[name]) screens[name].classList.add('active');
         }
 
         function startChat() { switchScreen('stage1'); }
@@ -1823,24 +1872,32 @@
             fileInput.value = '';
             document.getElementById('file-name-label').innerText = 'Upload Medical Report';
             document.getElementById('file-name-label').style.color = '';
+            // Reset dropdowns
+            const citySelect = document.getElementById('city-select');
+            const areaSelect = document.getElementById('area-select');
+            citySelect.value = '';
+            citySelect.classList.remove('has-value');
+            areaSelect.innerHTML = '<option value="">-- Select Area --</option>';
+            areaSelect.disabled = true;
+            areaSelect.classList.remove('has-value');
+            selectedCity = null;
+            selectedArea = null;
+            document.getElementById('location-selector').classList.remove('has-selection');
             checkS1Input();
+            closeEmergency();
             switchScreen('stage1');
         }
 
-        function setLang(lang, event) {
+        function setLang(lang, el) {
             selectedLang = lang;
-            document.querySelectorAll('.lang-pill').forEach(el => el.classList.remove('active'));
-            if (event && event.target) event.target.classList.add('active');
-        }
-
-        function fillInput(text) {
-            inputField.value = text;
-            checkS1Input();
-            inputField.focus();
+            document.querySelectorAll('.lang-pill').forEach(p => p.classList.remove('active'));
+            el.classList.add('active');
         }
 
         function checkS1Input() {
-            btnAnalyze.disabled = inputField.value.trim().length === 0 && !fileInput.files[0];
+            const hasText = inputField.value.trim().length > 0 || !!fileInput.files[0];
+            const hasLocation = !!(selectedCity && selectedArea);
+            btnAnalyze.disabled = !(hasText && hasLocation);
         }
 
         function handleFileSelect() {
@@ -1851,120 +1908,182 @@
             checkS1Input();
         }
 
+        // ── Location dropdown logic ────────────────────────────────
+        function onCityChange(el) {
+            selectedCity = el.value || null;
+            selectedArea = null;
+
+            const areaSelect = document.getElementById('area-select');
+            areaSelect.innerHTML = '<option value="">-- Select Area --</option>';
+            areaSelect.classList.remove('has-value');
+
+            if (selectedCity && CITY_AREAS[selectedCity]) {
+                areaSelect.disabled = false;
+                CITY_AREAS[selectedCity].forEach(area => {
+                    const opt = document.createElement('option');
+                    opt.value = area;
+                    opt.textContent = area;
+                    areaSelect.appendChild(opt);
+                });
+                el.classList.add('has-value');
+            } else {
+                areaSelect.disabled = true;
+                el.classList.remove('has-value');
+            }
+
+            document.getElementById('location-selector').classList.remove('has-selection');
+            checkS1Input();
+        }
+
+        function onAreaChange(el) {
+            selectedArea = el.value || null;
+            el.classList.toggle('has-value', !!selectedArea);
+            document.getElementById('location-selector').classList.toggle('has-selection', !!(selectedCity && selectedArea));
+            checkS1Input();
+        }
+
         function toBase64(file) {
             return new Promise((resolve, reject) => {
                 const reader = new FileReader();
                 reader.readAsDataURL(file);
                 reader.onload = () => resolve(reader.result);
-                reader.onerror = e => reject(e);
+                reader.onerror = err => reject(err);
             });
         }
 
+        // ── Trace panel ────────────────────────────────────────────
         function toggleTrace() {
             tracePanel.classList.toggle('open');
             traceBackdrop.classList.toggle('open');
-            if (tracePanel.classList.contains('open')) renderTraceFromData();
+            if (tracePanel.classList.contains('open')) fetchTrace();
         }
 
-        function renderTraceFromData() {
-            if (!lastResponseData) {
-                traceContent.innerHTML = '<i style="color:var(--text-secondary)">No trace data yet. Run an analysis first.</i>';
+        async function fetchTrace() {
+            if (MOCK_MODE) {
+                document.getElementById('ts-agents').innerText = '3';
+                document.getElementById('ts-time').innerText = '1.2s';
+                document.getElementById('ts-intent').innerText = 'mock';
+                traceContent.innerHTML = '<div class="t-line"><div class="t-time">[Mock]</div><div class="t-msg">Mock trace active</div></div>';
                 return;
             }
-            const data = lastResponseData;
-            const agents = data.agents_used || [];
-            const time = data.total_time_seconds || 0;
-            const intent = data.intent || 'N/A';
+            traceContent.innerHTML = '<i style="color:var(--text-secondary)">Loading trace...</i>';
+            try {
+                const res = await fetch(`http://localhost:5000/trace/${sessionId}`);
+                if (!res.ok) throw new Error("HTTP " + res.status);
+                const data = await res.json();
+                const traceLines = Array.isArray(data.trace) ? data.trace : [];
 
-            document.getElementById('trace-stats').innerHTML = `
-                <div class="t-card"><div class="t-lbl">Agents</div><div class="t-val">${agents.length}</div></div>
-                <div class="t-card"><div class="t-lbl">Time</div><div class="t-val">${time}s</div></div>
-                <div class="t-card"><div class="t-lbl">Intent</div><div class="t-val" style="font-size:10px;">${intent}</div></div>
-            `;
+                if (lastResponseData) {
+                    document.getElementById('ts-agents').innerText = lastResponseData.agents_count || 0;
+                    document.getElementById('ts-time').innerText = (lastResponseData.total_time_seconds || 0) + 's';
+                    document.getElementById('ts-intent').innerText = lastResponseData.intent || 'N/A';
+                }
 
-            traceContent.innerHTML = '';
-            (data.agent_trace || []).forEach((line, i) => {
-                const div = document.createElement('div');
-                div.className = 't-line';
-                div.style.animationDelay = `${i * 0.05}s`;
-                div.innerHTML = `<div class="t-msg">${line}</div>`;
-                traceContent.appendChild(div);
-            });
+                traceContent.innerHTML = '';
+                if (traceLines.length === 0) {
+                    traceContent.innerHTML = '<div class="t-msg" style="color:rgba(255,255,255,0.4)">No trace yet.</div>';
+                    return;
+                }
+
+                traceLines.forEach((line, i) => {
+                    const div = document.createElement('div');
+                    div.className = 't-line';
+                    div.style.animationDelay = `${i * 0.05}s`;
+                    const match = line.match(/\[MAIN AGENT\]\s+(\d{2}:\d{2}:\d{2})\s+(.*)/s);
+                    if (match) {
+                        div.innerHTML = `<div class="t-time">[${match[1]}]</div><div class="t-msg">${match[2]}</div>`;
+                    } else {
+                        div.innerHTML = `<div class="t-msg">${line}</div>`;
+                    }
+                    traceContent.appendChild(div);
+                });
+                traceContent.scrollTop = traceContent.scrollHeight;
+            } catch (e) {
+                traceContent.innerHTML = `<span style="color:var(--danger)">Failed: ${e.message}</span>`;
+            }
         }
 
-        /* ── Agent card definitions with staggered checkmark timing ── */
+        // ── Agent cards ────────────────────────────────────────────
         const AGENT_DEFS = {
-            'Agent-5001': { name: 'Symptom Analyzer', icon: '🧠', bg: '#EFF6FF', status: 'Analyzing symptoms...', checkAt: 6000 },
-            'Agent-5002': { name: 'Hospital Finder', icon: '🏥', bg: '#F0FDF4', status: 'Searching nearby hospitals...', checkAt: 3000 },
-            'Agent-5003': { name: 'Cost Estimator', icon: '💊', bg: '#FFFBEB', status: 'Calculating estimates...', checkAt: 6000 },
-            'Agent-5004': { name: 'Appointment Agent', icon: '📅', bg: '#F0F9FF', status: 'Checking availability...', checkAt: 10000 },
-            'Agent-5005': { name: 'Response Validator', icon: '✅', bg: '#F0FDF4', status: 'Validating results...', checkAt: 1000 }
+            'Agent-5001': { name: 'Symptom Analyzer', icon: '🧠', bg: '#EFF6FF', status: 'Analyzing symptoms...' },
+            'Agent-5002': { name: 'Hospital Finder', icon: '🏥', bg: '#F0FDF4', status: 'Searching nearby hospitals...' },
+            'Agent-5003': { name: 'Cost Estimator', icon: '💊', bg: '#FFFBEB', status: 'Calculating estimates...' },
+            'Agent-5004': { name: 'Appointment Agent', icon: '📅', bg: '#F0F9FF', status: 'Checking availability...' },
+            'Agent-5005': { name: 'Response Validator', icon: '✅', bg: '#F0FDF4', status: 'Validating results...' }
+        };
+
+        const AGENT_DONE_TIMES = {
+            'Agent-5002': 3000, 'Agent-5001': 6000,
+            'Agent-5003': 6000, 'Agent-5004': 10000, 'Agent-5005': 11000
         };
 
         function renderAgentCards(agentsUsed, isEmergency) {
             const list = document.getElementById('s2-agents-list');
             list.innerHTML = '';
-            let used = (agentsUsed && agentsUsed.length > 0) ? agentsUsed : ['Agent-5001'];
-            if (isEmergency) used = Object.keys(AGENT_DEFS);
+            const used = (isEmergency || !agentsUsed || agentsUsed.length === 0)
+                ? Object.keys(AGENT_DEFS) : agentsUsed;
 
             used.forEach((aId, idx) => {
-                const def = AGENT_DEFS[aId] || { name: aId, icon: '🤖', bg: '#f3f4f6', status: 'Processing...', checkAt: 5000 };
-                const delay = isEmergency ? 0 : idx * 0.4;
+                const def = AGENT_DEFS[aId] || { name: aId, icon: '🤖', bg: '#f3f4f6', status: 'Processing...' };
+                const delay = isEmergency ? 0 : idx * 0.15;
                 list.innerHTML += `
-                    <div class="agent-card" id="ac-${aId}" style="animation-delay:${delay}s">
-                        <div class="ac-icon" style="background:${def.bg}">${def.icon}</div>
-                        <div class="ac-details">
-                            <div class="ac-name">${def.name}</div>
-                            <div class="ac-status" id="ac-status-${aId}">${def.status}</div>
-                        </div>
-                        <div class="ac-indicator">
-                            <div class="ac-spinner" ${isEmergency ? 'style="border-top-color:var(--danger)"' : ''}></div>
-                            <div class="ac-check">✓</div>
-                        </div>
-                    </div>`;
+                <div class="agent-card" id="ac-${aId}" style="transition-delay:${delay}s">
+                    <div class="ac-icon" style="background:${def.bg}">${def.icon}</div>
+                    <div class="ac-details">
+                        <div class="ac-name">${def.name}</div>
+                        <div class="ac-status">${def.status}</div>
+                    </div>
+                    <div class="ac-indicator">
+                        <div class="ac-spinner" ${isEmergency ? 'style="border-top-color:var(--danger)"' : ''}></div>
+                        <div class="ac-check">✓</div>
+                    </div>
+                </div>`;
             });
 
-            /* Show cards with slide-in */
             setTimeout(() => {
                 document.querySelectorAll('.agent-card').forEach(el => el.classList.add('show'));
             }, 50);
 
-            /* ── BUG 2 FIX: Staggered checkmarks ── */
-            used.forEach(aId => {
-                const def = AGENT_DEFS[aId];
-                if (!def) return;
-                setTimeout(() => {
-                    const card = document.getElementById(`ac-${aId}`);
-                    if (card && !card.classList.contains('done')) {
-                        card.classList.add('done');
-                        const statusEl = document.getElementById(`ac-status-${aId}`);
-                        if (statusEl) statusEl.innerText = 'Complete ✓';
-                    }
-                }, def.checkAt);
-            });
+            if (!isEmergency) {
+                used.forEach(aId => {
+                    const doneTime = AGENT_DONE_TIMES[aId] || 8000;
+                    setTimeout(() => {
+                        const card = document.getElementById(`ac-${aId}`);
+                        if (card) card.classList.add('done');
+                    }, doneTime);
+                });
+            }
         }
 
         function markAgentsDone() {
-            document.querySelectorAll('.agent-card').forEach(el => {
-                el.classList.add('done');
-                const s = el.querySelector('[id^="ac-status-"]');
-                if (s && s.innerText !== 'Complete ✓') s.innerText = 'Complete ✓';
-            });
+            document.querySelectorAll('.agent-card').forEach(el => el.classList.add('done'));
         }
 
-        /* ── Main analysis flow ── */
+        // ── Emergency ──────────────────────────────────────────────
+        function showEmergency() { emergencyScreen.classList.add('show'); }
+
+        function closeEmergency() {
+            emergencyScreen.classList.remove('show');
+            if (lastResponseData) switchScreen('stage3');
+        }
+
+        function checkIsEmergency(data) {
+            return (
+                data.urgency_level === 'CRITICAL' ||
+                data.intent === 'EMERGENCY' ||
+                data.recommended_department === 'Emergency'
+            );
+        }
+
+        // ── Main analysis ──────────────────────────────────────────
         async function startAnalysis() {
-            const analysisStart = Date.now();
             const text = inputField.value.trim();
             const file = fileInput.files[0];
             let base64File = null;
             if (file) base64File = await toBase64(file);
 
             conversationHistory.push({ role: 'user', content: text, has_image: !!file, language: selectedLang });
-
             switchScreen('stage2');
-            screens.stage2.classList.remove('emergency');
-            document.getElementById('em-alert').classList.add('hidden');
             renderAgentCards(Object.keys(AGENT_DEFS), false);
 
             let transitioned = false;
@@ -1972,7 +2091,7 @@
                 if (!transitioned) {
                     transitioned = true;
                     markAgentsDone();
-                    renderStage3({ symptoms_summary: "Analysis complete. Please review results or try again." });
+                    renderStage3({ symptoms_summary: "Analysis timed out. Please try again." });
                 }
             }, 45000);
 
@@ -1981,25 +2100,33 @@
                 if (MOCK_MODE) {
                     await new Promise(r => setTimeout(r, 3000));
                     data = {
-                        agents_used: ["Agent-5001", "Agent-5002", "Agent-5003"],
-                        urgency_level: "MEDIUM",
-                        symptoms_summary: "Patient reports fever for 3 days with headache",
+                        agents_used: ["Agent-5001", "Agent-5002", "Agent-5003", "Agent-5004"],
+                        urgency_level: "MEDIUM", intent: "APPOINTMENT_NEEDED",
+                        symptoms_summary: "Patient wants appointment at Civil Hospital",
                         recommended_department: "General Medicine",
-                        hospital_recommendation: "Aga Khan Hospital, Karachi",
-                        cost_estimate: "PKR 2,000 – 5,000",
-                        appointment: "Token: AKU-G-001 | 2026-05-18 at 09:00 | Aga Khan University Hospital — General Medicine",
-                        follow_up_question: "Kitne din se bukhar hai aur temperature kitna hai?",
+                        hospital_recommendation: "Civil Hospital Karachi",
+                        cost_estimate: { estimated_cost: { currency: "PKR", minimum: 350, maximum: 2000 } },
+                        appointment: "Token: CHK-G-001 | 2026-05-19 at 08:00 | Civil Hospital Karachi — General Medicine",
+                        sms_simulation: "[SEHAT AGENT] Appointment confirmed! Token: CHK-G-001",
+                        patient_pass: "SEHAT AGENT\nToken: CHK-G-001\nDate: 2026-05-19\nTime: 08:00\nHospital: Civil Hospital Karachi",
+                        before_state: { status: "AVAILABLE", slot: "2026-05-19 at 08:00", token: "CHK-G-001", booked: false, total_slots_available: 4 },
+                        after_state: { status: "BOOKED ✅", slot: "2026-05-19 at 08:00", token: "CHK-G-001", booked: true, total_slots_available: 3, confirmation: "Appointment confirmed for Patient at Civil Hospital Karachi" },
                         do_not_delay: false,
-                        disclaimer: "This is AI guidance only. Always consult a qualified doctor."
+                        disclaimer: "This is AI guidance only. Always consult a qualified doctor.",
+                        agents_count: 4, total_time_seconds: 3.0
                     };
                 } else {
                     const controller = new AbortController();
                     const fetchTimeout = setTimeout(() => controller.abort(), 45000);
+
+                    // Include city and area in payload
                     const payload = {
                         session_id: sessionId,
                         message: text,
                         language: selectedLang,
-                        history: conversationHistory
+                        history: conversationHistory,
+                        city: selectedCity || '',
+                        area: selectedArea || ''
                     };
                     if (base64File) payload.image = base64File;
 
@@ -2015,39 +2142,31 @@
                 }
 
                 lastResponseData = data;
-                updateQuotaFromResponse(data, Date.now() - analysisStart);
-
-                /* ── BUG 1 FIX: Comprehensive emergency detection ── */
-                const urgencyUpper = (data.urgency_level || '').toUpperCase();
-                const isEmergency =
-                    urgencyUpper === 'CRITICAL' ||
-                    data.intent === 'EMERGENCY' ||
-                    (data.recommended_department || '').toLowerCase() === 'emergency' ||
-                    data.do_not_delay === true;
+                const isEmergency = checkIsEmergency(data);
 
                 if (isEmergency) {
                     screens.stage2.classList.add('emergency');
                     document.getElementById('em-alert').classList.remove('hidden');
+                } else {
+                    screens.stage2.classList.remove('emergency');
+                    document.getElementById('em-alert').classList.add('hidden');
                 }
 
-                /* Re-render cards now we know which agents were used */
                 renderAgentCards(data.agents_used || Object.keys(AGENT_DEFS), isEmergency);
 
-                /* Wait a beat then finalize */
                 setTimeout(() => {
                     markAgentsDone();
                     setTimeout(() => {
                         if (!transitioned) {
                             transitioned = true;
                             clearTimeout(safetyTimeout);
-                            if (isEmergency) showEmergency();
                             renderStage3(data);
+                            if (isEmergency) showEmergency();
                         }
                     }, 800);
-                }, isEmergency ? 1000 : 1500);
+                }, isEmergency ? 800 : 1500);
 
             } catch (e) {
-                console.error('Fetch error:', e);
                 if (!transitioned) {
                     transitioned = true;
                     clearTimeout(safetyTimeout);
@@ -2055,27 +2174,18 @@
                     const msg = e.name === 'AbortError'
                         ? "Request timed out. Please try again."
                         : "Error connecting to server. Is the backend running?";
-                    setTimeout(() => renderStage3({ symptoms_summary: msg }), 1000);
+                    setTimeout(() => renderStage3({ symptoms_summary: msg }), 800);
                 }
             }
         }
 
-        /* ── BUG 4 FIX: Follow-up Send Answer ── */
+        // ── Follow-up ──────────────────────────────────────────────
         async function sendFollowUp() {
             const text = document.getElementById('fu-input').value.trim();
             if (!text) return;
-
-            /* Disable button to prevent double-submit */
-            const sendBtn = document.getElementById('btn-fu-send');
-            if (sendBtn) { sendBtn.disabled = true; sendBtn.textContent = 'Sending...'; }
-
-            /* Add answer to history BEFORE sending */
-            conversationHistory.push({ role: 'user', content: text });
             document.getElementById('fu-input').value = '';
-
+            conversationHistory.push({ role: 'user', content: text, language: selectedLang });
             switchScreen('stage2');
-            screens.stage2.classList.remove('emergency');
-            document.getElementById('em-alert').classList.add('hidden');
             renderAgentCards(['Agent-5001'], false);
 
             try {
@@ -2083,68 +2193,53 @@
                 if (MOCK_MODE) {
                     await new Promise(r => setTimeout(r, 2000));
                     data = {
-                        agents_used: ["Agent-5001"],
-                        urgency_level: "LOW",
-                        symptoms_summary: "Updated analysis based on your follow-up answer.",
-                        recommended_department: "General Physician",
-                        disclaimer: "Always consult a qualified doctor."
+                        agents_used: ["Agent-5001"], urgency_level: "MEDIUM", intent: "SYMPTOM_ONLY",
+                        symptoms_summary: "Updated analysis.", recommended_department: "General Medicine",
+                        disclaimer: "Always consult a qualified doctor.", agents_count: 1, total_time_seconds: 2.0
                     };
                 } else {
-                    const res = await fetch('http://localhost:5000/analyze', {
+                    const res = await fetch('http://localhost:5000/follow-up', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({
                             session_id: sessionId,
-                            message: text,           /* key the server reads */
+                            message: text,
                             history: conversationHistory,
-                            language: selectedLang
+                            language: selectedLang,
+                            city: selectedCity || '',
+                            area: selectedArea || ''
                         })
                     });
                     if (!res.ok) throw new Error(`Server error ${res.status}`);
                     data = await res.json();
                 }
-
                 lastResponseData = data;
-                conversationHistory.push({ role: 'assistant', content: data.symptoms_summary || '' });
                 markAgentsDone();
                 setTimeout(() => renderStage3(data), 800);
-
             } catch (e) {
-                console.error('Follow-up error:', e);
                 markAgentsDone();
-                setTimeout(() => renderStage3({
-                    symptoms_summary: "Error processing follow-up. Please try again.",
-                    disclaimer: "Always consult a qualified doctor."
-                }), 800);
+                setTimeout(() => renderStage3({ symptoms_summary: `Follow-up error: ${e.message}` }), 800);
             }
         }
 
-        /* ── BUG 3 FIX: renderStage3 with proper cost + appointment display ── */
+        // ── Render Stage 3 ─────────────────────────────────────────
         function renderStage3(data) {
             switchScreen('stage3');
 
-            const urgencyRaw = (data.urgency_level || 'LOW').toUpperCase();
-            const urgencyLabel = urgencyRaw || 'LOW';
-            const urgencyColors = {
-                LOW: 'var(--success)',
-                NORMAL: 'var(--success)',
-                MEDIUM: 'var(--warning)',
-                HIGH: 'var(--high)',
-                CRITICAL: 'var(--danger)'
-            };
-            const barBorder = urgencyColors[urgencyLabel] || 'var(--success)';
+            const urgency = data.urgency_level || 'LOW';
+            const validUrg = ['LOW', 'MEDIUM', 'HIGH', 'CRITICAL'];
+            const safeUrgency = validUrg.includes(urgency) ? urgency : 'LOW';
 
-            document.getElementById('s3-summary-bar').style.borderTop = `4px solid ${barBorder}`;
             document.getElementById('s3-summary-bar').innerHTML = `
-                <div class="s3-urgency-pill ${urgencyLabel}">${urgencyLabel}</div>
-                ${(urgencyLabel === 'CRITICAL' || data.do_not_delay) ? '<div class="s3-delay-warn">Do not delay ⚠️</div>' : ''}
+                <div class="s3-urgency-pill ${safeUrgency}">${safeUrgency}</div>
+                ${(safeUrgency === 'CRITICAL' || data.do_not_delay) ? '<div class="s3-delay-warn">Do not delay ⚠️</div>' : ''}
             `;
 
             const cards = document.getElementById('s3-cards');
             cards.innerHTML = '';
 
-            /* Card 1 — Symptom summary */
-            const summary = data.summary || data.symptoms_summary;
+            // 1. Symptom Analysis
+            const summary = data.symptoms_summary || data.summary;
             if (summary) {
                 cards.innerHTML += `
                 <div class="r-card sym">
@@ -2153,111 +2248,122 @@
                 </div>`;
             }
 
-            /* Card 2 — Department */
-            const dept = data.department || data.recommended_department;
+            // 2. Department
+            const dept = data.recommended_department || data.department;
             if (dept) {
                 cards.innerHTML += `
                 <div class="r-card dep">
                     <div class="rc-header"><span>🏥</span><div class="rc-title">Recommended Department</div></div>
                     <div class="rc-main-val">${dept} <div class="rc-badge">Recommended</div></div>
-                    ${data.reasoning ? `<div class="rc-content" style="font-size:13px">${data.reasoning}</div>` : ''}
+                    ${data.reasoning ? `<div class="rc-content" style="font-size:13px;margin-top:8px">${data.reasoning}</div>` : ''}
                 </div>`;
             }
 
-            /* Card 3 — Hospital */
-            const hosp = data.hospital || data.hospital_recommendation;
+            // 3. Hospital
+            const hosp = data.hospital_recommendation || data.hospital;
             if (hosp) {
-                let hDisplay = hosp;
-                if (typeof hosp === 'object') {
-                    hDisplay = hosp.name || JSON.stringify(hosp);
-                    if (hosp.address) hDisplay += `<br><span style="font-size:12px;color:var(--text-secondary)">${hosp.address}</span>`;
-                    if (hosp.phone) hDisplay += `<br><span style="font-size:12px;color:var(--text-secondary)">📞 ${hosp.phone}</span>`;
-                }
+                const hospDisplay = typeof hosp === 'object' ? (hosp.name || '') : hosp;
                 cards.innerHTML += `
                 <div class="r-card hos">
                     <div class="rc-header"><span>📍</span><div class="rc-title">Nearest Hospital</div></div>
-                    <div class="rc-content">${hDisplay}</div>
+                    <div class="rc-content">${hospDisplay}</div>
                 </div>`;
             }
 
-            /* Card 4 — Cost (BUG 3 fix: handles both string and nested object) */
+            // 4. Cost
             if (data.cost_estimate) {
                 let costStr = data.cost_estimate;
                 if (typeof costStr === 'object') {
-                    /* cost_agent raw dict: { estimated_cost: { minimum, maximum, currency } } */
                     const ec = costStr.estimated_cost || costStr;
                     const cur = ec.currency || 'PKR';
                     const mn = (ec.minimum ?? 0).toLocaleString();
                     const mx = (ec.maximum ?? 0).toLocaleString();
                     costStr = `${cur} ${mn} – ${mx}`;
                 }
-                /* Guard: never show [object Object] */
-                if (costStr && costStr !== '[object Object]') {
-                    cards.innerHTML += `
-                    <div class="r-card cost">
-                        <div class="rc-header"><span>💰</span><div class="rc-title">Cost Estimate</div></div>
-                        <div class="rc-main-val">${costStr}</div>
-                    </div>`;
-                }
+                const govCost = data.cost_estimate.government_cost;
+                const payAdvice = data.cost_estimate.payment_advice;
+                cards.innerHTML += `
+                <div class="r-card cost">
+                    <div class="rc-header"><span>💰</span><div class="rc-title">Cost Estimate</div></div>
+                    <div class="rc-main-val">${costStr}</div>
+                    ${govCost ? `<div class="rc-content" style="font-size:12px;margin-top:4px">Government option: ${govCost}</div>` : ''}
+                    ${payAdvice ? `<div class="rc-content" style="font-size:12px;margin-top:4px;color:var(--primary)">${payAdvice}</div>` : ''}
+                </div>`;
             }
 
-            /* Card 5 — Appointment (BUG 3 fix: handles string token format + patient pass) */
+            // 5. Appointment
             if (data.appointment) {
-                const appt = data.appointment;
-                let apptHtml = '';
-
-                if (typeof appt === 'string' && appt.trim()) {
-                    /* Format: "Token: AKU-C-001 | 2026-05-18 at 09:00 | Aga Khan — Cardiology" */
-                    const parts = appt.split(' | ');
-                    const tokenPart = parts[0] || appt;
-                    const datetimePart = parts[1] || '';
-                    const hospitalPart = parts[2] || '';
-
-                    apptHtml = `
-                        <div style="font-weight:600;color:var(--primary-dark);font-size:14px;">${tokenPart}</div>
-                        ${datetimePart ? `<div style="font-size:13px;color:var(--text-secondary);margin-top:4px;">📅 ${datetimePart}</div>` : ''}
-                        ${hospitalPart ? `<div style="font-size:13px;color:var(--text-secondary);">🏥 ${hospitalPart}</div>` : ''}
-                        <div style="font-size:12px;color:var(--success);font-weight:600;margin-top:4px;">Status: CONFIRMED ✅</div>
-                    `;
-
-                } else if (typeof appt === 'object' && appt !== null) {
-                    const token = appt.token_number || 'N/A';
-                    const date = appt.appointment_date || '';
-                    const time = appt.appointment_time || '';
-                    const hosp2 = appt.hospital || '';
-                    const dept2 = appt.department || '';
-                    const status = (appt.booking_status || 'confirmed').toUpperCase();
-                    const sms = appt.sms_simulation || '';
-                    const pass = appt.patient_pass || '';
-
-                    apptHtml = `
-                        <div style="font-weight:600;color:var(--primary-dark);font-size:14px;">Token: ${token}</div>
-                        ${date ? `<div style="font-size:13px;color:var(--text-secondary);margin-top:4px;">📅 ${date} at ${time}</div>` : ''}
-                        ${hosp2 ? `<div style="font-size:13px;color:var(--text-secondary);">🏥 ${hosp2} — ${dept2}</div>` : ''}
-                        <div style="font-size:12px;color:var(--success);font-weight:600;margin-top:4px;">Status: ${status} ✅</div>
-                    `;
-                    if (sms) apptHtml += `<div class="sms-box">📱 ${sms}</div>`;
-                    if (pass) {
-                        const pid = 'pass-' + Math.random().toString(36).substr(2, 6);
-                        apptHtml += `
-                            <span class="pass-toggle" onclick="togglePass('${pid}')">📄 View Patient Pass ▼</span>
-                            <div class="pass-content" id="${pid}">${pass}</div>
-                        `;
-                    }
-                } else {
-                    apptHtml = `<div class="rc-content">${String(appt)}</div>`;
-                }
-
-                if (apptHtml) {
-                    cards.innerHTML += `
-                    <div class="r-card app">
-                        <div class="rc-header"><span>📅</span><div class="rc-title">Appointment Booked</div></div>
-                        ${apptHtml}
-                    </div>`;
-                }
+                cards.innerHTML += `
+                <div class="r-card app">
+                    <div class="rc-header"><span>📅</span><div class="rc-title">Appointment</div></div>
+                    <div class="rc-content">${data.appointment}</div>
+                    ${data.sms_simulation ? `<div class="rc-content" style="font-size:12px;margin-top:8px;padding:8px;background:var(--bg-mint);border-radius:8px">📱 ${data.sms_simulation}</div>` : ''}
+                    ${data.patient_pass ? `
+                        <div class="pp-toggle" onclick="togglePatientPass(this)">📋 View Patient Pass</div>
+                        <div class="pp-content">${data.patient_pass}</div>
+                    ` : ''}
+                </div>`;
             }
 
-            /* Card 6 — Disclaimer */
+            // 6. Before/After State Card
+            const before = data.before_state;
+            const after = data.after_state;
+            if (before || after) {
+                const isEmergencyState = (before && before.booked === false && after && after.booked === false);
+                let beforeBadge, beforeDetails, afterBadge, afterDetails;
+
+                if (isEmergencyState) {
+                    beforeBadge = `<div class="state-badge emergency-badge">🚨 Emergency</div>`;
+                    beforeDetails = `<div class="state-detail">No appointment needed<br><strong>Walk-in immediately</strong></div>`;
+                    afterBadge = `<div class="state-badge booked">✅ Directed to ER</div>`;
+                    afterDetails = `<div class="state-detail">Patient directed to<br><strong>nearest Emergency Room</strong></div>`;
+                } else {
+                    const bSlots = before ? (before.total_slots_available ?? '?') : '?';
+                    const aSlots = after ? (after.total_slots_available ?? '?') : '?';
+                    const token = (before && before.token) || (after && after.token) || '';
+                    const slot = (before && before.slot) || (after && after.slot) || '';
+
+                    beforeBadge = `<div class="state-badge available">⏳ Available</div>`;
+                    beforeDetails = `<div class="state-detail">
+                        Slot: <strong>${slot}</strong><br>
+                        Token: <strong>${token}</strong><br>
+                        Open slots: <strong>${bSlots}</strong>
+                    </div>`;
+                    afterBadge = `<div class="state-badge booked">✅ Booked</div>`;
+                    afterDetails = `<div class="state-detail">
+                        Slot: <strong>${slot}</strong><br>
+                        Token: <strong>${token}</strong><br>
+                        Open slots: <strong>${aSlots}</strong>
+                        ${after && after.confirmation ? `<br><span style="color:var(--success);font-size:10px">✓ ${after.confirmation}</span>` : ''}
+                    </div>`;
+                }
+
+                cards.innerHTML += `
+                <div class="r-card state">
+                    <div class="state-header">
+                        <span style="font-size:18px">📊</span>
+                        <div class="rc-title">System State Change</div>
+                    </div>
+                    <div class="state-grid">
+                        <div class="state-col">
+                            <div class="state-col-label before">Before Booking</div>
+                            ${beforeBadge}
+                            ${beforeDetails}
+                        </div>
+                        <div class="state-col">
+                            <div class="state-col-label after">After Booking</div>
+                            ${afterBadge}
+                            ${afterDetails}
+                        </div>
+                    </div>
+                    <div class="state-arrow">
+                        <span class="state-arrow-icon">→</span>
+                        <span>Appointment Agent executed booking — slot state changed</span>
+                    </div>
+                </div>`;
+            }
+
+            // 7. Disclaimer
             if (data.disclaimer) {
                 cards.innerHTML += `
                 <div class="r-card disc">
@@ -2266,83 +2372,26 @@
                 </div>`;
             }
 
-            /* Follow-up question */
+            // Follow-up
             const fuContainer = document.getElementById('s3-followup-container');
-            const sendBtn = document.getElementById('btn-fu-send');
             if (data.follow_up_question) {
                 fuContainer.classList.remove('hidden');
                 document.getElementById('fu-q-text').innerText = data.follow_up_question;
-                if (sendBtn) { sendBtn.disabled = false; sendBtn.textContent = 'Send Answer →'; }
+                document.getElementById('fu-input').value = '';
             } else {
                 fuContainer.classList.add('hidden');
             }
+
+            document.getElementById('stage-3').scrollTop = 0;
         }
 
-        function togglePass(id) {
-            const el = document.getElementById(id);
-            if (el) el.classList.toggle('open');
+        function togglePatientPass(el) {
+            const content = el.nextElementSibling;
+            content.classList.toggle('open');
+            el.innerText = content.classList.contains('open') ? '📋 Hide Patient Pass' : '📋 View Patient Pass';
         }
-
-        function showEmergency() { screens.emergency.classList.add('active'); }
-        function closeEmergency() { screens.emergency.classList.remove('active'); }
-
-        /* ── Quota Tracker ── */
-        const QUOTA_AGENTS = [
-            { id: 'Agent-5001', icon: '🧠', name: 'Symptom Agent', port: 5001 },
-            { id: 'Agent-5002', icon: '🏥', name: 'Hospital Finder', port: 5002 },
-            { id: 'Agent-5003', icon: '💊', name: 'Cost Agent', port: 5003 },
-            { id: 'Agent-5004', icon: '📅', name: 'Appointment Agent', port: 5004 },
-            { id: 'Agent-5005', icon: '🔍', name: 'Validator', port: 5005 },
-            { id: 'Orchestrator', icon: '🎯', name: 'Orchestrator', port: 5000 },
-        ];
-
-        let quotaStats = {};
-        QUOTA_AGENTS.forEach(a => { quotaStats[a.id] = { status: 'gray', time: null, fallback: false }; });
-
-        function updateQuotaFromResponse(data, elapsedMs) {
-            const agentsUsed = data.agents_used || [];
-            const totalTime = data.total_time_seconds ? data.total_time_seconds * 1000 : elapsedMs;
-            const fallback = !!data.fallback_used;
-            const perAgent = totalTime / Math.max(agentsUsed.length, 1);
-            agentsUsed.forEach(aId => {
-                const t = perAgent / 1000;
-                quotaStats[aId] = { status: t < 5 ? 'ok' : (t < 20 ? 'slow' : 'error'), time: t.toFixed(1), fallback };
-            });
-            const ts = totalTime / 1000;
-            quotaStats['Orchestrator'] = { status: ts < 5 ? 'ok' : (ts < 20 ? 'slow' : 'error'), time: ts.toFixed(1), fallback };
-            renderQuotaPanel();
-        }
-
-        function renderQuotaPanel() {
-            const container = document.getElementById('qp-rows');
-            if (!container) return;
-            container.innerHTML = QUOTA_AGENTS.map(agent => {
-                const s = quotaStats[agent.id] || { status: 'gray', time: null, fallback: false };
-                const labels = { ok: 'OK', slow: 'Slow', error: 'Quota/Error', gray: 'Not tested' };
-                return `<div class="qp-row">
-                    <div class="qp-dot ${s.status === 'gray' ? '' : s.status}"></div>
-                    <div class="qp-info">
-                        <div class="qp-name">${agent.icon} ${agent.name}</div>
-                        <div class="qp-meta">${labels[s.status]} · ${s.time !== null ? s.time + 's' : '—'}</div>
-                        ${s.fallback ? '<div class="qp-fallback">⚠ Fallback active</div>' : ''}
-                    </div>
-                </div>`;
-            }).join('');
-        }
-
-        function toggleQuotaPanel() {
-            const p = document.getElementById('quota-panel');
-            p.classList.toggle('open');
-            if (p.classList.contains('open')) renderQuotaPanel();
-        }
-
-        function resetQuotaStats() {
-            QUOTA_AGENTS.forEach(a => { quotaStats[a.id] = { status: 'gray', time: null, fallback: false }; });
-            renderQuotaPanel();
-        }
-
-        renderQuotaPanel();
     </script>
+
 </body>
 
 </html>

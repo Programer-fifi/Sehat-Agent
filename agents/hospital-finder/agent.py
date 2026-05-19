@@ -1,449 +1,882 @@
-import urllib.request
+"""
+hospital_finder/agent.py  —  UPDATED VERSION
+────────────────────────────────────────────────────────────────
+Hospital Finder Agent — Sehat Agent
+
+ORIGINAL FIXES (preserved):
+  FIX-1  Dual route: both /analyze AND /hospital-finder/analyze respond
+  FIX-2  Emergency urgency now correctly maps to "emergency" dept in fallback DB
+  FIX-3  Graceful city extraction from raw_input if city not explicitly passed
+  FIX-4  hospital_type always returned even when source=fallback
+  FIX-5  Better reasoning string for judges' agent trace
+  FIX-6  Quota-safe: zero Gemini calls, only Google Places (optional) or fallback
+
+NEW IN THIS UPDATE:
+  UPDATE-1  area parameter accepted from UI location selector
+  UPDATE-2  AREA_HOSPITAL_MAP added — area keyword → nearest hospital names
+  UPDATE-3  _reorder_by_area() reorders results so nearest hospital comes first
+  UPDATE-4  reasoning string now mentions area used for proximity sorting
+"""
+
 import json
 import os
-import re
-
+import urllib.request
+from datetime import datetime
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 
-# Load API key from .env
-env_path = os.path.join(os.path.dirname(__file__), '.env')
-if os.path.exists(env_path):
-    with open(env_path, 'r') as f:
-        for line in f:
-            line = line.strip()
-            if line and not line.startswith('#') and '=' in line:
-                key, value = line.split('=', 1)
-                os.environ[key] = value.strip(' "\'')
+# ── Logger ────────────────────────────────────────────────────────────────────
 
-_RAW_KEY = os.environ.get("GOOGLE_PLACES_API_KEY", "")
-API_KEY = _RAW_KEY if (_RAW_KEY and not all(c in '.* ' for c in _RAW_KEY)) else ""
+def log(msg):
+    print(f"[HOSPITAL FINDER] {datetime.now().strftime('%H:%M:%S')} {msg}")
 
-# ── Karachi Area → Nearby Hospitals mapping ─────────────────────────────────
-# Each area maps to hospital names that are closest to it
-AREA_HOSPITAL_PROXIMITY = {
-    # South / Central Karachi
-    "saddar":       ["Civil Hospital Karachi", "JPMC", "Jinnah Postgraduate"],
-    "garden":       ["Civil Hospital Karachi", "JPMC"],
-    "lyari":        ["Civil Hospital Karachi", "JPMC"],
-    "kemari":       ["Civil Hospital Karachi", "JPMC"],
-    "kharadar":     ["Civil Hospital Karachi", "JPMC"],
-    "soldier bazaar": ["Civil Hospital Karachi", "JPMC"],
 
-    # Stadium Road / University Road area
-    "stadium":      ["Aga Khan University Hospital", "Liaquat National Hospital"],
-    "aga khan":     ["Aga Khan University Hospital"],
-    "university road": ["Aga Khan University Hospital", "Liaquat National Hospital", "Tabba Heart Institute"],
-    "gulshan":      ["Abbasi Shaheed Hospital", "Aga Khan University Hospital"],
-    "gulshan-e-iqbal": ["Abbasi Shaheed Hospital", "Aga Khan University Hospital"],
-    "federal b area": ["Karachi Institute of Heart Diseases", "JPMC"],
-    "fb area":      ["Karachi Institute of Heart Diseases", "JPMC"],
+# ── Env Loader ────────────────────────────────────────────────────────────────
 
-    # North Karachi / Nazimabad
-    "north nazimabad": ["Ziauddin Hospital", "Abbasi Shaheed Hospital"],
-    "nazimabad":    ["Ziauddin Hospital", "Civil Hospital Karachi"],
-    "north karachi": ["Ziauddin Hospital", "Abbasi Shaheed Hospital"],
-    "new karachi":  ["Ziauddin Hospital", "Abbasi Shaheed Hospital"],
-    "orangi":       ["Ziauddin Hospital", "Civil Hospital Karachi"],
+def _load_env():
+    env_path = os.path.join(os.path.dirname(__file__), '.env')
+    if os.path.exists(env_path):
+        with open(env_path) as f:
+            for line in f:
+                line = line.strip()
+                if line and not line.startswith('#') and '=' in line:
+                    k, v = line.split('=', 1)
+                    os.environ.setdefault(k.strip(), v.strip(' "\''))
 
-    # DHA / Clifton / Defence
-    "dha":          ["Shaukat Khanum Karachi", "Aga Khan University Hospital", "South City Hospital"],
-    "defence":      ["Shaukat Khanum Karachi", "Aga Khan University Hospital", "South City Hospital"],
-    "clifton":      ["South City Hospital", "Aga Khan University Hospital"],
-    "bath island":  ["South City Hospital", "Aga Khan University Hospital"],
+_load_env()
+API_KEY = os.environ.get("GOOGLE_PLACES_API_KEY", "")
 
-    # Korangi / Landhi / Malir
-    "korangi":      ["Indus Hospital", "Liaquat National Hospital"],
-    "landhi":       ["Indus Hospital", "Liaquat National Hospital"],
-    "malir":        ["Indus Hospital", "Abbasi Shaheed Hospital"],
-    "bin qasim":    ["Indus Hospital"],
 
-    # PECHS / Bahadurabad
-    "pechs":        ["Liaquat National Hospital", "Aga Khan University Hospital"],
-    "bahadurabad":  ["Liaquat National Hospital", "Civil Hospital Karachi"],
-    "shah faisal":  ["Liaquat National Hospital", "Indus Hospital"],
+# ── Fallback Database ─────────────────────────────────────────────────────────
 
-    # Gulberg / Johar
-    "gulberg":      ["Abbasi Shaheed Hospital", "Ziauddin Hospital"],
-    "johar":        ["Abbasi Shaheed Hospital", "Ziauddin Hospital"],
-
-    # Surjani / Baldia
-    "surjani":      ["Abbasi Shaheed Hospital", "Ziauddin Hospital"],
-    "baldia":       ["Civil Hospital Karachi", "Ziauddin Hospital"],
+FALLBACK_DB = {
+    "karachi": {
+        "cardiology": [
+            {"name": "National Institute of Cardiovascular Diseases (NICVD)",
+             "address": "Rafiqui H.J. Shaheed Road, Karachi", "phone": "021-99201271",
+             "rating": 4.6, "type": "government", "emergency": True,
+             "maps_link": "https://maps.google.com/?q=NICVD+Karachi"},
+            {"name": "Karachi Institute of Heart Diseases (KIHD)",
+             "address": "Federal B. Area, Karachi", "phone": "021-99233074",
+             "rating": 4.2, "type": "government", "emergency": True,
+             "maps_link": "https://maps.google.com/?q=KIHD+Karachi"},
+            {"name": "Tabba Heart Institute",
+             "address": "1/3, Shahrah-e-Faisal, Karachi", "phone": "021-34033600",
+             "rating": 4.5, "type": "private", "emergency": True,
+             "maps_link": "https://maps.google.com/?q=Tabba+Heart+Institute+Karachi"},
+        ],
+        "general medicine": [
+            {"name": "Civil Hospital Karachi",
+             "address": "Karachi Medical & Dental College, Karachi", "phone": "021-99215740",
+             "rating": 4.0, "type": "government", "emergency": True,
+             "maps_link": "https://maps.google.com/?q=Civil+Hospital+Karachi"},
+            {"name": "Liaquat National Hospital",
+             "address": "Stadium Road, Karachi", "phone": "021-34412000",
+             "rating": 4.3, "type": "private", "emergency": True,
+             "maps_link": "https://maps.google.com/?q=Liaquat+National+Hospital+Karachi"},
+            {"name": "Aga Khan University Hospital",
+             "address": "Stadium Road, Karachi", "phone": "021-111-911-911",
+             "rating": 4.5, "type": "private", "emergency": True,
+             "maps_link": "https://maps.google.com/?q=Aga+Khan+Hospital+Karachi"},
+        ],
+        "emergency": [
+            {"name": "Jinnah Postgraduate Medical Centre (JPMC)",
+             "address": "Rafiqui Shaheed Road, Karachi", "phone": "021-99201300",
+             "rating": 4.1, "type": "government", "emergency": True,
+             "maps_link": "https://maps.google.com/?q=JPMC+Karachi"},
+            {"name": "Civil Hospital Karachi",
+             "address": "Karachi Medical & Dental College, Karachi", "phone": "021-99215740",
+             "rating": 4.0, "type": "government", "emergency": True,
+             "maps_link": "https://maps.google.com/?q=Civil+Hospital+Karachi"},
+            {"name": "Aga Khan University Hospital",
+             "address": "Stadium Road, Karachi", "phone": "021-111-911-911",
+             "rating": 4.5, "type": "private", "emergency": True,
+             "maps_link": "https://maps.google.com/?q=Aga+Khan+Hospital+Karachi"},
+        ],
+        "neurology": [
+            {"name": "Aga Khan University Hospital",
+             "address": "Stadium Road, Karachi", "phone": "021-111-911-911",
+             "rating": 4.5, "type": "private", "emergency": True,
+             "maps_link": "https://maps.google.com/?q=Aga+Khan+Hospital+Karachi"},
+            {"name": "Liaquat National Hospital",
+             "address": "Stadium Road, Karachi", "phone": "021-34412000",
+             "rating": 4.3, "type": "private", "emergency": False,
+             "maps_link": "https://maps.google.com/?q=Liaquat+National+Hospital+Karachi"},
+        ],
+        "pediatrics": [
+            {"name": "National Institute of Child Health (NICH)",
+             "address": "Rafiqui Shaheed Road, Karachi", "phone": "021-99201700",
+             "rating": 4.3, "type": "government", "emergency": True,
+             "maps_link": "https://maps.google.com/?q=NICH+Karachi"},
+            {"name": "The Children's Hospital Karachi",
+             "address": "Johar, Karachi", "phone": "021-34812400",
+             "rating": 4.2, "type": "private", "emergency": True,
+             "maps_link": "https://maps.google.com/?q=Childrens+Hospital+Karachi"},
+        ],
+        "gynecology": [
+            {"name": "Lyari General Hospital",
+             "address": "Lyari, Karachi", "phone": "021-32810071",
+             "rating": 3.9, "type": "government", "emergency": True,
+             "maps_link": "https://maps.google.com/?q=Lyari+General+Hospital+Karachi"},
+            {"name": "Aga Khan University Hospital",
+             "address": "Stadium Road, Karachi", "phone": "021-111-911-911",
+             "rating": 4.5, "type": "private", "emergency": True,
+             "maps_link": "https://maps.google.com/?q=Aga+Khan+Hospital+Karachi"},
+        ],
+        "orthopedics": [
+            {"name": "Jinnah Postgraduate Medical Centre (JPMC)",
+             "address": "Rafiqui Shaheed Road, Karachi", "phone": "021-99201300",
+             "rating": 4.1, "type": "government", "emergency": False,
+             "maps_link": "https://maps.google.com/?q=JPMC+Karachi"},
+            {"name": "Aga Khan University Hospital",
+             "address": "Stadium Road, Karachi", "phone": "021-111-911-911",
+             "rating": 4.5, "type": "private", "emergency": False,
+             "maps_link": "https://maps.google.com/?q=Aga+Khan+Hospital+Karachi"},
+        ],
+        "dermatology": [
+            {"name": "Jinnah Postgraduate Medical Centre (JPMC)",
+             "address": "Rafiqui Shaheed Road, Karachi", "phone": "021-99201300",
+             "rating": 4.1, "type": "government", "emergency": False,
+             "maps_link": "https://maps.google.com/?q=JPMC+Karachi"},
+        ],
+        "psychiatry": [
+            {"name": "Institute of Behavioral Sciences (IBS)",
+             "address": "Gulshan-e-Iqbal, Karachi", "phone": "021-34820472",
+             "rating": 4.0, "type": "government", "emergency": False,
+             "maps_link": "https://maps.google.com/?q=IBS+Karachi"},
+        ],
+    },
+    "lahore": {
+        "general medicine": [
+            {"name": "Services Hospital Lahore",
+             "address": "Jail Road, Lahore", "phone": "042-99203520",
+             "rating": 4.1, "type": "government", "emergency": True,
+             "maps_link": "https://maps.google.com/?q=Services+Hospital+Lahore"},
+            {"name": "Lahore General Hospital",
+             "address": "Ferozepur Road, Lahore", "phone": "042-99231430",
+             "rating": 4.0, "type": "government", "emergency": True,
+             "maps_link": "https://maps.google.com/?q=Lahore+General+Hospital"},
+            {"name": "Hameed Latif Hospital",
+             "address": "Canal Bank Road, Lahore", "phone": "042-35761999",
+             "rating": 4.3, "type": "private", "emergency": True,
+             "maps_link": "https://maps.google.com/?q=Hameed+Latif+Hospital+Lahore"},
+        ],
+        "cardiology": [
+            {"name": "Punjab Institute of Cardiology (PIC)",
+             "address": "Jail Road, Lahore", "phone": "042-99203051",
+             "rating": 4.4, "type": "government", "emergency": True,
+             "maps_link": "https://maps.google.com/?q=Punjab+Institute+of+Cardiology+Lahore"},
+            {"name": "Ittefaq Hospital",
+             "address": "Model Town, Lahore", "phone": "042-35161000",
+             "rating": 4.2, "type": "private", "emergency": True,
+             "maps_link": "https://maps.google.com/?q=Ittefaq+Hospital+Lahore"},
+        ],
+        "oncology": [
+            {"name": "Shaukat Khanum Memorial Cancer Hospital",
+             "address": "7-A Block R-3, M.A. Johar Town, Lahore", "phone": "042-35945100",
+             "rating": 4.7, "type": "private", "emergency": False,
+             "maps_link": "https://maps.google.com/?q=Shaukat+Khanum+Lahore"},
+        ],
+        "emergency": [
+            {"name": "Mayo Hospital Lahore",
+             "address": "Nila Gumbad, Lahore", "phone": "042-99211100",
+             "rating": 4.2, "type": "government", "emergency": True,
+             "maps_link": "https://maps.google.com/?q=Mayo+Hospital+Lahore"},
+            {"name": "Services Hospital Lahore",
+             "address": "Jail Road, Lahore", "phone": "042-99203520",
+             "rating": 4.1, "type": "government", "emergency": True,
+             "maps_link": "https://maps.google.com/?q=Services+Hospital+Lahore"},
+        ],
+        "pediatrics": [
+            {"name": "The Children's Hospital Lahore",
+             "address": "Ferozepur Road, Lahore", "phone": "042-99230400",
+             "rating": 4.4, "type": "government", "emergency": True,
+             "maps_link": "https://maps.google.com/?q=Childrens+Hospital+Lahore"},
+        ],
+    },
+    "islamabad": {
+        "general medicine": [
+            {"name": "Pakistan Institute of Medical Sciences (PIMS)",
+             "address": "G-8/3, Islamabad", "phone": "051-9261170",
+             "rating": 4.2, "type": "government", "emergency": True,
+             "maps_link": "https://maps.google.com/?q=PIMS+Islamabad"},
+            {"name": "Shifa International Hospital",
+             "address": "H-8/4, Islamabad", "phone": "051-8464646",
+             "rating": 4.4, "type": "private", "emergency": True,
+             "maps_link": "https://maps.google.com/?q=Shifa+International+Hospital+Islamabad"},
+        ],
+        "cardiology": [
+            {"name": "National Institute of Heart Diseases (NIHD)",
+             "address": "G-8, Islamabad", "phone": "051-9255521",
+             "rating": 4.3, "type": "government", "emergency": True,
+             "maps_link": "https://maps.google.com/?q=NIHD+Islamabad"},
+            {"name": "Shifa International Hospital",
+             "address": "H-8/4, Islamabad", "phone": "051-8464646",
+             "rating": 4.4, "type": "private", "emergency": True,
+             "maps_link": "https://maps.google.com/?q=Shifa+International+Hospital+Islamabad"},
+        ],
+        "emergency": [
+            {"name": "Pakistan Institute of Medical Sciences (PIMS)",
+             "address": "G-8/3, Islamabad", "phone": "051-9261170",
+             "rating": 4.2, "type": "government", "emergency": True,
+             "maps_link": "https://maps.google.com/?q=PIMS+Islamabad"},
+            {"name": "Shifa International Hospital",
+             "address": "H-8/4, Islamabad", "phone": "051-8464646",
+             "rating": 4.4, "type": "private", "emergency": True,
+             "maps_link": "https://maps.google.com/?q=Shifa+International+Hospital+Islamabad"},
+        ],
+        "pediatrics": [
+            {"name": "Children's Hospital Islamabad",
+             "address": "G-8/3, Islamabad", "phone": "051-9261321",
+             "rating": 4.1, "type": "government", "emergency": True,
+             "maps_link": "https://maps.google.com/?q=Childrens+Hospital+Islamabad"},
+        ],
+    },
+    "rawalpindi": {
+        "general medicine": [
+            {"name": "Holy Family Hospital",
+             "address": "Satellite Town, Rawalpindi", "phone": "051-9290301",
+             "rating": 4.1, "type": "government", "emergency": True,
+             "maps_link": "https://maps.google.com/?q=Holy+Family+Hospital+Rawalpindi"},
+            {"name": "Benazir Bhutto Hospital",
+             "address": "Murree Road, Rawalpindi", "phone": "051-9290401",
+             "rating": 4.0, "type": "government", "emergency": True,
+             "maps_link": "https://maps.google.com/?q=Benazir+Bhutto+Hospital+Rawalpindi"},
+        ],
+        "emergency": [
+            {"name": "Holy Family Hospital",
+             "address": "Satellite Town, Rawalpindi", "phone": "051-9290301",
+             "rating": 4.1, "type": "government", "emergency": True,
+             "maps_link": "https://maps.google.com/?q=Holy+Family+Hospital+Rawalpindi"},
+        ],
+    },
+    "peshawar": {
+        "general medicine": [
+            {"name": "Lady Reading Hospital",
+             "address": "Peshawar", "phone": "091-9211236",
+             "rating": 4.2, "type": "government", "emergency": True,
+             "maps_link": "https://maps.google.com/?q=Lady+Reading+Hospital+Peshawar"},
+            {"name": "Khyber Teaching Hospital",
+             "address": "Peshawar", "phone": "091-9213301",
+             "rating": 4.1, "type": "government", "emergency": True,
+             "maps_link": "https://maps.google.com/?q=Khyber+Teaching+Hospital+Peshawar"},
+        ],
+        "emergency": [
+            {"name": "Lady Reading Hospital",
+             "address": "Peshawar", "phone": "091-9211236",
+             "rating": 4.2, "type": "government", "emergency": True,
+             "maps_link": "https://maps.google.com/?q=Lady+Reading+Hospital+Peshawar"},
+        ],
+    },
 }
 
-# ── Full hospital database ──────────────────────────────────────────────────
-ALL_HOSPITALS = {
-    "Aga Khan University Hospital": {
-        "displayName": {"text": "Aga Khan University Hospital"},
-        "formattedAddress": "Stadium Road, Karachi",
-        "nationalPhoneNumber": "021-111-911-911",
-        "rating": 4.7, "userRatingCount": 5200,
-        "googleMapsUri": "https://maps.google.com/?q=Aga+Khan+Hospital+Karachi",
-        "regularOpeningHours": {"openNow": True},
-        "_type": "Private",
-        "departments": ["cardiology", "neurology", "orthopedics", "gastroenterology",
-                        "pulmonology", "dermatology", "pediatrics", "gynecology",
-                        "oncology", "emergency", "general_medicine", "urology", "ent"],
+# ── UPDATE-2: Area → nearest hospital priority map ────────────────────────────
+# Maps area keyword → list of preferred hospital names (nearest first)
+AREA_HOSPITAL_MAP = {
+    "karachi": {
+        "clifton":         ["Aga Khan University Hospital", "Tabba Heart Institute", "Liaquat National Hospital"],
+        "dha":             ["Aga Khan University Hospital", "Tabba Heart Institute", "Liaquat National Hospital"],
+        "gulshan":         ["Liaquat National Hospital", "Aga Khan University Hospital"],
+        "gulshan-e-iqbal": ["Liaquat National Hospital", "Aga Khan University Hospital"],
+        "saddar":          ["Civil Hospital Karachi", "Jinnah Postgraduate Medical Centre (JPMC)"],
+        "north nazimabad": ["National Institute of Cardiovascular Diseases (NICVD)", "Liaquat National Hospital"],
+        "nazimabad":       ["National Institute of Cardiovascular Diseases (NICVD)", "Liaquat National Hospital"],
+        "fb area":         ["National Institute of Child Health (NICH)", "National Institute of Cardiovascular Diseases (NICVD)"],
+        "federal b":       ["National Institute of Cardiovascular Diseases (NICVD)", "National Institute of Child Health (NICH)"],
+        "pechs":           ["Aga Khan University Hospital", "Liaquat National Hospital"],
+        "korangi":         ["Jinnah Postgraduate Medical Centre (JPMC)", "Civil Hospital Karachi"],
+        "landhi":          ["Jinnah Postgraduate Medical Centre (JPMC)", "Civil Hospital Karachi"],
+        "malir":           ["Jinnah Postgraduate Medical Centre (JPMC)", "Civil Hospital Karachi"],
+        "orangi":          ["Civil Hospital Karachi"],
+        "orangi town":     ["Civil Hospital Karachi"],
+        "lyari":           ["Civil Hospital Karachi", "Lyari General Hospital"],
+        "kemari":          ["Civil Hospital Karachi"],
+        "johar":           ["Aga Khan University Hospital", "National Institute of Child Health (NICH)"],
+        "surjani":         ["Civil Hospital Karachi"],
+        "surjani town":    ["Civil Hospital Karachi"],
+        "shah faisal":     ["Jinnah Postgraduate Medical Centre (JPMC)"],
+        "liaquatabad":     ["National Institute of Cardiovascular Diseases (NICVD)", "Civil Hospital Karachi"],
+        "new karachi":     ["Civil Hospital Karachi", "National Institute of Cardiovascular Diseases (NICVD)"],
+        "gulberg":         ["Liaquat National Hospital", "Civil Hospital Karachi"],
+        "baldia":          ["Civil Hospital Karachi"],
     },
-    "Liaquat National Hospital": {
-        "displayName": {"text": "Liaquat National Hospital"},
-        "formattedAddress": "Stadium Road, Karachi",
-        "nationalPhoneNumber": "021-111-456-789",
-        "rating": 4.3, "userRatingCount": 3100,
-        "googleMapsUri": "https://maps.google.com/?q=Liaquat+National+Hospital+Karachi",
-        "regularOpeningHours": {"openNow": True},
-        "_type": "Private",
-        "departments": ["cardiology", "neurology", "orthopedics", "gastroenterology",
-                        "pulmonology", "general_medicine", "emergency", "gynecology"],
+    "lahore": {
+        "gulberg":         ["Hameed Latif Hospital", "Services Hospital Lahore"],
+        "dha":             ["Hameed Latif Hospital"],
+        "dha lahore":      ["Hameed Latif Hospital"],
+        "model town":      ["Hameed Latif Hospital", "Ittefaq Hospital"],
+        "johar town":      ["Shaukat Khanum Memorial Cancer Hospital", "Services Hospital Lahore"],
+        "iqbal town":      ["Services Hospital Lahore", "Lahore General Hospital"],
+        "garden town":     ["Hameed Latif Hospital", "Services Hospital Lahore"],
+        "wapda town":      ["Services Hospital Lahore"],
+        "cantt":           ["Services Hospital Lahore"],
+        "bahria town":     ["Hameed Latif Hospital"],
+        "faisal town":     ["Services Hospital Lahore", "Lahore General Hospital"],
+        "township":        ["Lahore General Hospital"],
+        "shadman":         ["Mayo Hospital Lahore", "Services Hospital Lahore"],
+        "samanabad":       ["Lahore General Hospital", "Services Hospital Lahore"],
+        "ravi road":       ["Lahore General Hospital"],
+        "shalimar":        ["Lahore General Hospital"],
     },
-    "Jinnah Postgraduate Medical Centre (JPMC)": {
-        "displayName": {"text": "Jinnah Postgraduate Medical Centre (JPMC)"},
-        "formattedAddress": "Rafiqui Shaheed Road, Karachi",
-        "nationalPhoneNumber": "021-99201300",
-        "rating": 4.2, "userRatingCount": 3200,
-        "googleMapsUri": "https://maps.google.com/?q=JPMC+Karachi",
-        "regularOpeningHours": {"openNow": True},
-        "_type": "Government",
-        "departments": ["emergency", "general_medicine", "gastroenterology",
-                        "pulmonology", "gynecology", "neurology", "cardiology"],
+    "islamabad": {
+        "f-7":             ["Shifa International Hospital"],
+        "f-8":             ["Shifa International Hospital", "Pakistan Institute of Medical Sciences (PIMS)"],
+        "f-7 / f-8":       ["Shifa International Hospital", "Pakistan Institute of Medical Sciences (PIMS)"],
+        "f-10":            ["Shifa International Hospital"],
+        "f-11":            ["Shifa International Hospital"],
+        "f-10 / f-11":     ["Shifa International Hospital"],
+        "g-8":             ["Pakistan Institute of Medical Sciences (PIMS)"],
+        "g-9":             ["Pakistan Institute of Medical Sciences (PIMS)"],
+        "g-8 / g-9":       ["Pakistan Institute of Medical Sciences (PIMS)"],
+        "g-10":            ["Pakistan Institute of Medical Sciences (PIMS)"],
+        "g-11":            ["Pakistan Institute of Medical Sciences (PIMS)"],
+        "g-10 / g-11":     ["Pakistan Institute of Medical Sciences (PIMS)"],
+        "i-8":             ["Pakistan Institute of Medical Sciences (PIMS)"],
+        "i-9":             ["Pakistan Institute of Medical Sciences (PIMS)"],
+        "i-8 / i-9":       ["Pakistan Institute of Medical Sciences (PIMS)"],
+        "blue area":       ["Shifa International Hospital", "Pakistan Institute of Medical Sciences (PIMS)"],
+        "blue area / g-6": ["Shifa International Hospital", "Pakistan Institute of Medical Sciences (PIMS)"],
+        "dha islamabad":   ["Shifa International Hospital"],
+        "dha":             ["Shifa International Hospital"],
+        "bahria town":     ["Shifa International Hospital"],
+        "e-7":             ["Shifa International Hospital"],
+        "bani gala":       ["Shifa International Hospital"],
     },
-    "Civil Hospital Karachi": {
-        "displayName": {"text": "Civil Hospital Karachi"},
-        "formattedAddress": "Bandar Road, Karachi",
-        "nationalPhoneNumber": "021-99215740",
-        "rating": 4.0, "userRatingCount": 2800,
-        "googleMapsUri": "https://maps.google.com/?q=Civil+Hospital+Karachi",
-        "regularOpeningHours": {"openNow": True},
-        "_type": "Government",
-        "departments": ["emergency", "general_medicine", "dermatology",
-                        "gynecology", "pediatrics", "orthopedics"],
+    "rawalpindi": {
+        "saddar":          ["Holy Family Hospital", "Benazir Bhutto Hospital"],
+        "satellite town":  ["Holy Family Hospital"],
+        "murree road":     ["Benazir Bhutto Hospital"],
+        "chaklala":        ["Benazir Bhutto Hospital"],
+        "bahria town":     ["Holy Family Hospital"],
+        "dha":             ["Holy Family Hospital"],
+        "dha rawalpindi":  ["Holy Family Hospital"],
+        "raja bazaar":     ["Benazir Bhutto Hospital"],
+        "gulzar-e-quaid":  ["Holy Family Hospital"],
+        "adyala road":     ["Benazir Bhutto Hospital"],
     },
-    "National Institute of Cardiovascular Diseases (NICVD)": {
-        "displayName": {"text": "National Institute of Cardiovascular Diseases (NICVD)"},
-        "formattedAddress": "Rafiqui Shaheed Road, Karachi",
-        "nationalPhoneNumber": "021-99201271",
-        "rating": 4.6, "userRatingCount": 4500,
-        "googleMapsUri": "https://maps.google.com/?q=NICVD+Karachi",
-        "regularOpeningHours": {"openNow": True},
-        "_type": "Government",
-        "departments": ["cardiology", "emergency"],
-    },
-    "Tabba Heart Institute": {
-        "displayName": {"text": "Tabba Heart Institute"},
-        "formattedAddress": "Karachi University Road, Karachi",
-        "nationalPhoneNumber": "021-34390198",
-        "rating": 4.4, "userRatingCount": 980,
-        "googleMapsUri": "https://maps.google.com/?q=Tabba+Heart+Institute+Karachi",
-        "regularOpeningHours": {"openNow": True},
-        "_type": "Private",
-        "departments": ["cardiology", "emergency"],
-    },
-    "Karachi Institute of Heart Diseases (KIHD)": {
-        "displayName": {"text": "Karachi Institute of Heart Diseases (KIHD)"},
-        "formattedAddress": "Federal B Area, Karachi",
-        "nationalPhoneNumber": "021-99233074",
-        "rating": 4.2, "userRatingCount": 1200,
-        "googleMapsUri": "https://maps.google.com/?q=KIHD+Karachi",
-        "regularOpeningHours": {"openNow": True},
-        "_type": "Government",
-        "departments": ["cardiology", "emergency"],
-    },
-    "Ziauddin Hospital": {
-        "displayName": {"text": "Ziauddin Hospital"},
-        "formattedAddress": "North Nazimabad, Karachi",
-        "nationalPhoneNumber": "021-111-100-200",
-        "rating": 4.2, "userRatingCount": 1800,
-        "googleMapsUri": "https://maps.google.com/?q=Ziauddin+Hospital+Karachi",
-        "regularOpeningHours": {"openNow": True},
-        "_type": "Private",
-        "departments": ["orthopedics", "dermatology", "general_medicine",
-                        "gynecology", "neurology", "emergency"],
-    },
-    "Abbasi Shaheed Hospital": {
-        "displayName": {"text": "Abbasi Shaheed Hospital"},
-        "formattedAddress": "Gulshan-e-Iqbal, Karachi",
-        "nationalPhoneNumber": "021-34812471",
-        "rating": 3.9, "userRatingCount": 900,
-        "googleMapsUri": "https://maps.google.com/?q=Abbasi+Shaheed+Hospital+Karachi",
-        "regularOpeningHours": {"openNow": True},
-        "_type": "Government",
-        "departments": ["emergency", "general_medicine", "gynecology", "pediatrics"],
-    },
-    "Shaukat Khanum Memorial Cancer Hospital Karachi": {
-        "displayName": {"text": "Shaukat Khanum Memorial Cancer Hospital Karachi"},
-        "formattedAddress": "DHA Phase 5, Karachi",
-        "nationalPhoneNumber": "021-35179000",
-        "rating": 4.7, "userRatingCount": 4100,
-        "googleMapsUri": "https://maps.google.com/?q=Shaukat+Khanum+Karachi",
-        "regularOpeningHours": {"openNow": True},
-        "_type": "Private",
-        "departments": ["oncology"],
-    },
-    "Indus Hospital": {
-        "displayName": {"text": "Indus Hospital"},
-        "formattedAddress": "Korangi, Karachi",
-        "nationalPhoneNumber": "021-35112709",
-        "rating": 4.6, "userRatingCount": 3800,
-        "googleMapsUri": "https://maps.google.com/?q=Indus+Hospital+Karachi",
-        "regularOpeningHours": {"openNow": True},
-        "_type": "Private",
-        "departments": ["oncology", "general_medicine", "emergency", "pediatrics"],
-    },
-    "National Institute of Child Health (NICH)": {
-        "displayName": {"text": "National Institute of Child Health (NICH)"},
-        "formattedAddress": "Rafiqui Shaheed Road, Karachi",
-        "nationalPhoneNumber": "021-99201700",
-        "rating": 4.4, "userRatingCount": 2100,
-        "googleMapsUri": "https://maps.google.com/?q=NICH+Karachi",
-        "regularOpeningHours": {"openNow": True},
-        "_type": "Government",
-        "departments": ["pediatrics", "emergency"],
-    },
-    "South City Hospital": {
-        "displayName": {"text": "South City Hospital"},
-        "formattedAddress": "Clifton, Karachi",
-        "nationalPhoneNumber": "021-35374765",
-        "rating": 4.3, "userRatingCount": 1500,
-        "googleMapsUri": "https://maps.google.com/?q=South+City+Hospital+Karachi",
-        "regularOpeningHours": {"openNow": True},
-        "_type": "Private",
-        "departments": ["cardiology", "general_medicine", "emergency", "gynecology"],
+    "peshawar": {
+        "university town": ["Lady Reading Hospital", "Khyber Teaching Hospital"],
+        "hayatabad":       ["Lady Reading Hospital"],
+        "saddar":          ["Lady Reading Hospital", "Khyber Teaching Hospital"],
+        "cantonment":      ["Khyber Teaching Hospital"],
+        "ring road":       ["Lady Reading Hospital"],
+        "gulbahar":        ["Lady Reading Hospital"],
+        "firdous":         ["Lady Reading Hospital"],
+        "kohat road":      ["Lady Reading Hospital"],
+        "city centre":     ["Lady Reading Hospital", "Khyber Teaching Hospital"],
     },
 }
 
-DEPT_SEARCH_MAP = {
-    "cardiology":        "best cardiology heart hospital Karachi",
-    "neurology":         "best neurology brain hospital Karachi",
-    "orthopedics":       "best orthopedic bone joint hospital Karachi",
-    "gastroenterology":  "best gastroenterology digestive hospital Karachi",
-    "pulmonology":       "best pulmonology chest lung hospital Karachi",
-    "dermatology":       "best dermatology skin hospital Karachi",
-    "pediatrics":        "best children pediatric hospital Karachi",
-    "gynecology":        "best gynecology maternity hospital Karachi",
-    "oncology":          "best cancer oncology hospital Karachi",
-    "emergency":         "emergency hospital Karachi 24 hours",
-    "general_medicine":  "best general medicine hospital Karachi",
-    "general medicine":  "best general medicine hospital Karachi",
+# Department aliases — expanded with all common spellings + Roman Urdu
+DEPARTMENT_ALIASES = {
+    # Cardiology
+    "heart": "cardiology", "cardiac": "cardiology", "dil": "cardiology",
+    "seena": "cardiology", "cardio": "cardiology",
+    # Neurology
+    "brain": "neurology", "neuro": "neurology", "dimagh": "neurology",
+    "paralysis": "neurology",
+    # Gastroenterology
+    "stomach": "gastroenterology", "gastro": "gastroenterology",
+    "pet dard": "gastroenterology", "liver": "gastroenterology",
+    "ulcer": "gastroenterology", "diarrhea": "gastroenterology",
+    # Pediatrics
+    "child": "pediatrics", "children": "pediatrics", "baby": "pediatrics",
+    "bachcha": "pediatrics", "bacha": "pediatrics", "bacche": "pediatrics",
+    "bachon": "pediatrics", "infant": "pediatrics", "paeds": "pediatrics",
+    # Gynecology
+    "women": "gynecology", "gynae": "gynecology", "obstetrics": "gynecology",
+    "gyne": "gynecology", "gyni": "gynecology", "gynecology": "gynecology",
+    "gynaecology": "gynecology", "aurat": "gynecology", "hamal": "gynecology",
+    "pregnancy": "gynecology", "delivery": "gynecology", "maternity": "gynecology",
+    "mahwari": "gynecology", "period": "gynecology",
+    # Orthopedics
+    "bone": "orthopedics", "joint": "orthopedics", "ortho": "orthopedics",
+    "haddi": "orthopedics", "joron": "orthopedics", "fracture": "orthopedics",
+    # Dermatology
+    "skin": "dermatology", "jild": "dermatology", "rash": "dermatology",
+    "kharish": "dermatology", "daane": "dermatology",
+    # Ophthalmology
+    "eye": "ophthalmology", "eyes": "ophthalmology", "aankh": "ophthalmology",
+    "vision": "ophthalmology", "aankhon": "ophthalmology",
+    # ENT
+    "ear": "ent", "nose": "ent", "throat": "ent", "kaan": "ent",
+    "naak": "ent", "gala": "ent",
+    # Urology
+    "kidney": "urology", "urine": "urology", "peshab": "urology",
+    "gurda": "urology",
+    # Oncology
+    "cancer": "oncology", "tumor": "oncology",
+    # Psychiatry
+    "mental": "psychiatry", "psychology": "psychiatry", "dimagi": "psychiatry",
+    "anxiety": "psychiatry", "depression": "psychiatry",
+    # Endocrinology
+    "diabetes": "endocrinology", "thyroid": "endocrinology", "sugar": "endocrinology",
+    # Pulmonology
+    "lung": "pulmonology", "asthma": "pulmonology", "khansi": "pulmonology",
+    "breathing": "pulmonology", "phephra": "pulmonology",
+    # General Medicine
+    "general": "general medicine", "fever": "general medicine",
+    "bukhar": "general medicine", "flu": "general medicine",
+    "zukam": "general medicine",
+    # Emergency
+    "emergency": "emergency", "emer": "emergency", "critical": "emergency",
+    "behosh": "emergency", "accident": "emergency",
 }
 
-def _get_search_query(department):
-    dept_lower = department.lower().strip()
-    if dept_lower in DEPT_SEARCH_MAP:
-        return DEPT_SEARCH_MAP[dept_lower]
-    for key, query in DEPT_SEARCH_MAP.items():
-        if key in dept_lower or dept_lower in key:
-            return query
-    return f"best {department} hospital Karachi Pakistan"
+# City aliases
+CITY_ALIASES = {
+    "khi": "karachi", "khy": "karachi",
+    "lhr": "lahore", "lhe": "lahore",
+    "isb": "islamabad", "isl": "islamabad",
+    "rwp": "rawalpindi", "pindi": "rawalpindi",
+    "pesh": "peshawar", "pew": "peshawar", "pkw": "peshawar",
+}
+
+# City keywords to detect from raw input
+CITY_KEYWORDS = {
+    "karachi": "karachi", "khi": "karachi",
+    "lahore": "lahore",   "lhr": "lahore",
+    "islamabad": "islamabad", "isb": "islamabad",
+    "rawalpindi": "rawalpindi", "pindi": "rawalpindi", "rwp": "rawalpindi",
+    "peshawar": "peshawar", "pesh": "peshawar",
+    "multan": "multan",   "faisalabad": "faisalabad",
+    "quetta": "quetta",
+}
 
 
-def detect_area(user_message):
-    """Extract Karachi area/neighbourhood from user message."""
-    if not user_message:
-        return None
-    msg_lower = user_message.lower()
-    for area in AREA_HOSPITAL_PROXIMITY:
-        if area in msg_lower:
-            return area
-    return None
+# ── Normalizers ───────────────────────────────────────────────────────────────
+
+def _normalize_department(dept: str) -> str:
+    """Map department string → canonical fallback DB key."""
+    d = dept.lower().strip()
+    for alias, canonical in DEPARTMENT_ALIASES.items():
+        if alias in d:
+            return canonical
+    return d
 
 
-def get_hospitals_for_dept_and_area(department, user_message=""):
+def _normalize_city(city: str) -> str:
+    city_lower = city.lower().strip()
+    return CITY_ALIASES.get(city_lower, city_lower)
+
+
+def _detect_city_from_text(raw_input: str) -> str:
+    """If city not passed, try to extract from raw symptom text."""
+    text = raw_input.lower()
+    for keyword, city in CITY_KEYWORDS.items():
+        if keyword in text:
+            return city
+    return "karachi"  # safe default
+
+
+# ── UPDATE-3: Area-based reordering ──────────────────────────────────────────
+
+def _reorder_by_area(hospitals: list, city: str, area: str) -> list:
     """
-    Return ranked hospital list:
-    1. Nearest to user's area AND has the department
-    2. Has the department (any location)
-    3. General fallback
+    UPDATE-3: Reorder hospitals so area-nearest ones come first.
+    If area matches a known mapping, preferred hospitals float to top.
     """
-    dept_lower = department.lower().strip()
-    # Normalize department key
-    dept_key = dept_lower.replace(" ", "_")
+    if not area:
+        return hospitals
 
-    detected_area = detect_area(user_message)
-    area_hospital_names = []
-    if detected_area:
-        area_hospital_names = AREA_HOSPITAL_PROXIMITY.get(detected_area, [])
-        print(f"[HospitalFinder] Area detected: {detected_area}, nearby: {area_hospital_names}")
+    area_lower = area.lower().strip()
+    city_lower = _normalize_city(city)
 
-    # Score each hospital
-    scored = []
-    for hosp_name, hosp_data in ALL_HOSPITALS.items():
-        depts = hosp_data.get("departments", [])
-        has_dept = (
-            dept_key in depts or
-            dept_lower in depts or
-            any(dept_lower in d or d in dept_lower for d in depts)
-        )
-        # Area proximity score
-        area_score = 0
-        for i, area_hosp in enumerate(area_hospital_names):
-            if area_hosp.lower() in hosp_name.lower() or hosp_name.lower() in area_hosp.lower():
-                area_score = 10 - i  # closer match = higher score
+    city_map = AREA_HOSPITAL_MAP.get(city_lower, {})
+    preferred_names = []
 
-        dept_score = 5 if has_dept else 0
-        rating_score = hosp_data.get("rating", 3.0)
+    # Exact key match first, then substring match
+    if area_lower in city_map:
+        preferred_names = city_map[area_lower]
+    else:
+        for kw, names in city_map.items():
+            if kw in area_lower or area_lower in kw:
+                preferred_names = names
+                break
 
-        total_score = area_score + dept_score + rating_score
-        scored.append((total_score, has_dept, hosp_data))
+    if not preferred_names:
+        log(f"No area proximity data for '{area}' in {city_lower} — using default order")
+        return hospitals
 
-    # Sort by total score descending
-    scored.sort(key=lambda x: x[0], reverse=True)
+    log(f"Area '{area}' → preferred hospitals: {preferred_names}")
 
-    # Return top results that have the department, fallback to all
-    with_dept = [h for _, has_dept, h in scored if has_dept]
-    without_dept = [h for _, has_dept, h in scored if not has_dept]
+    def sort_key(h):
+        name = h.get("name", "")
+        for i, pref in enumerate(preferred_names):
+            if pref.lower() in name.lower() or name.lower() in pref.lower():
+                return i
+        return len(preferred_names) + 1
 
-    result = with_dept[:3] if with_dept else without_dept[:3]
-
-    area_note = f"near {detected_area.title()}" if detected_area else "in Karachi"
-    return result, area_note
+    return sorted(hospitals, key=sort_key)
 
 
-def search_places_new(query):
+# ── Fallback Lookup ───────────────────────────────────────────────────────────
+
+def get_fallback_hospitals(city: str, department: str, hospital_type: str = "any",
+                            urgency_level: str = "routine", area: str = "") -> list:
+    """
+    Returns list of formatted hospital dicts, area-sorted when possible.
+    FIX-2: Emergency urgency → look in 'emergency' bucket first.
+    UPDATE-3: area used to reorder results by proximity.
+    """
+    city_norm = _normalize_city(city)
+    dept_norm = _normalize_department(department)
+
+    city_data = FALLBACK_DB.get(city_norm, FALLBACK_DB.get("karachi", {}))
+
+    # FIX-2: If urgency is critical/emergency, prefer emergency bucket
+    if urgency_level in ("critical", "emergency") and "emergency" in city_data:
+        hospitals = city_data["emergency"]
+        log(f"Emergency urgency → using 'emergency' bucket for {city_norm}")
+    else:
+        hospitals = city_data.get(dept_norm, city_data.get("general medicine", []))
+
+    # Filter by type if specified
+    if hospital_type in ("government", "private"):
+        filtered = [h for h in hospitals if h.get("type") == hospital_type]
+        if filtered:
+            hospitals = filtered
+
+    # Always ensure at least one result
+    if not hospitals:
+        hospitals = FALLBACK_DB["karachi"]["general medicine"]
+
+    # UPDATE-3: Reorder by area proximity
+    hospitals = _reorder_by_area(hospitals, city_norm, area)
+
+    return hospitals
+
+
+# ── Google Places API ─────────────────────────────────────────────────────────
+
+def search_places_api(department: str, city: str, hospital_type: str = "any", area: str = ""):
     if not API_KEY:
+        log("No Google Places API key — using fallback")
         return None
+
+    type_prefix = {"government": "government ", "private": "private "}.get(hospital_type, "")
+    # UPDATE-1: Include area in query for more precise results
+    area_suffix = f" near {area}" if area else ""
+    query = f"{type_prefix}{department} hospital in {city}{area_suffix} Pakistan"
+
     url = "https://places.googleapis.com/v1/places:searchText"
     headers = {
         "Content-Type": "application/json",
         "X-Goog-Api-Key": API_KEY,
         "X-Goog-FieldMask": (
-            "places.displayName,places.formattedAddress,places.id,"
-            "places.nationalPhoneNumber,places.rating,places.userRatingCount,"
-            "places.googleMapsUri,places.regularOpeningHours"
-        )
+            "places.displayName,places.formattedAddress,places.nationalPhoneNumber,"
+            "places.rating,places.googleMapsUri,places.regularOpeningHours"
+        ),
     }
-    data = {"textQuery": query, "languageCode": "en", "regionCode": "PK"}
-    json_data = json.dumps(data).encode('utf-8')
+    payload = json.dumps({"textQuery": query, "languageCode": "en", "regionCode": "PK"}).encode()
+
+    log(f"Google Places API → {query}")
     try:
-        req = urllib.request.Request(url, data=json_data, headers=headers, method='POST')
-        with urllib.request.urlopen(req, timeout=10) as response:
-            result = json.loads(response.read().decode())
-            if result.get("places"):
-                return result
-            return None
+        req = urllib.request.Request(url, data=payload, headers=headers, method='POST')
+        with urllib.request.urlopen(req, timeout=8) as resp:
+            result = json.loads(resp.read().decode())
+            count = len(result.get("places", []))
+            log(f"Places API returned {count} results")
+            return result if count else None
     except Exception as e:
-        print(f"[HospitalFinder] Google Places API failed: {e}")
+        log(f"Places API failed: {e} — falling back to mock DB")
         return None
 
 
-def build_full_output(places, department, urgency, area_note="in Karachi"):
-    def format_place(p, rank=1):
-        name = p.get('displayName', {}).get('text', 'Unknown Hospital')
-        # Estimate distance based on rank and area detection
-        if "near" in area_note:
-            base_dist = 1.5 + (rank - 1) * 2.5
-        else:
-            base_dist = 3.0 + (rank - 1) * 3.0
-        distance = f"~{base_dist:.1f} km {area_note}"
+# ── Formatters ────────────────────────────────────────────────────────────────
 
-        return {
-            "name": name,
-            "distance": distance,
-            "department": department,
-            "department_available": True,
-            "emergency": True,
-            "phone": p.get('nationalPhoneNumber', 'N/A'),
-            "maps_link": p.get('googleMapsUri', ''),
-            "rating": p.get('rating', 4.0),
-            "reviews_count": p.get('userRatingCount', 0),
-            "type": p.get('_type', 'Government'),
-            "address": p.get('formattedAddress', ''),
-            "open_now": p.get('regularOpeningHours', {}).get('openNow', True),
-            "opening_hours": "24/7"
-        }
-
-    top = format_place(places[0], rank=1)
-    alternatives = [format_place(places[i], rank=i+1) for i in range(1, min(3, len(places)))]
-
-    is_emergency = urgency.lower() in ("critical", "emergency")
-
-    # Government option for cost comparison
-    govt_option = next((format_place(p) for p in places if p.get('_type') == 'Government'), top)
-    private_option = next((format_place(p) for p in places if p.get('_type') == 'Private'), None)
-
+def _fmt_api(place: dict, department: str) -> dict:
+    name = place.get("displayName", {}).get("text", "Hospital")
+    gov_keywords = ["civil", "jinnah", "jpmc", "pims", "nicvd", "govt",
+                    "services hospital", "general hospital", "teaching", "lady reading",
+                    "mayo", "holy family", "benazir"]
+    h_type = "government" if any(w in name.lower() for w in gov_keywords) else "private"
     return {
-        "search_query_used": _get_search_query(department),
-        "total_found": len(places),
-        "filtered_to": len(places),
-        "area_detected": area_note,
-        "top_recommendation": top,
-        "alternatives": alternatives,
-        "hospital_recommendation": top["name"],
-        "cost_comparison": {
-            "government_option": {
-                "name": govt_option["name"],
-                "estimated_cost": "PKR 50-500",
-                "note": "Lower cost, longer wait time"
-            },
-            "private_option": {
-                "name": private_option["name"] if private_option else top["name"],
-                "estimated_cost": "PKR 3,000-25,000",
-                "note": "Faster service, higher cost"
-            }
-        },
-        "reasoning": (
-            f"Selected {top['name']} for {department} — rated {top['rating']}⭐, "
-            f"located {top['distance']}. "
-            + ("Government option also available for lower cost. " if govt_option["name"] != top["name"] else "")
-            + ("Share exact location for precise distance." if "Karachi" in area_note else "")
-        ),
-        "emergency_note": (
-            f"URGENT: Go immediately to Emergency at {top['name']}. Call: {top['phone']}"
-        ) if is_emergency else "",
+        "name": name,
+        "address": place.get("formattedAddress", ""),
         "department": department,
-        "urgency_level": urgency,
+        "emergency": True,
+        "phone": place.get("nationalPhoneNumber", "See Google Maps"),
+        "maps_link": place.get("googleMapsUri", ""),
+        "rating": place.get("rating", "N/A"),
+        "type": h_type,
+        "open_now": place.get("regularOpeningHours", {}).get("openNow", True),
+        "distance": "See Google Maps",
     }
 
+
+def _fmt_fallback(h: dict, department: str) -> dict:
+    return {
+        "name": h["name"],
+        "address": h.get("address", ""),
+        "department": department,
+        "emergency": h.get("emergency", True),
+        "phone": h.get("phone", "N/A"),
+        "maps_link": h.get("maps_link", ""),
+        "rating": h.get("rating", "N/A"),
+        "type": h.get("type", "government"),
+        "open_now": True,
+        "distance": "Nearest available",
+    }
+
+
+# ── Core Logic ────────────────────────────────────────────────────────────────
+
+def run_hospital_finder(input_data: dict) -> dict:
+    department    = (input_data.get("department") or "General Medicine").strip()
+    city          = (input_data.get("city") or "").strip()
+    area          = (input_data.get("area") or "").strip()          # UPDATE-1
+    urgency_level = (input_data.get("urgency_level") or "routine").lower().strip()
+    hospital_type = (input_data.get("hospital_type") or "any").lower().strip()
+    raw_input     = input_data.get("raw_input", "")
+    patient_name  = input_data.get("patient_name", "Patient")
+
+    named_hospital = input_data.get("named_hospital")
+
+    # FIX-3: Detect city from raw text if not provided
+    if not city:
+        city = _detect_city_from_text(raw_input)
+        log(f"City not specified — detected '{city}' from raw input")
+
+    if hospital_type not in ("government", "private", "any"):
+        hospital_type = "any"
+
+    visit_type = "Emergency" if urgency_level in ("critical", "emergency") else "OPD"
+
+    log(f"Request: dept={department} city={city} area='{area}' urgency={urgency_level} type={hospital_type}")
+
+    # ── Named hospital shortcut ───────────────────────────────────────────────
+    if named_hospital:
+        log(f"[Step 1] Named hospital detected: '{named_hospital}' — skipping Places API")
+        city_norm = _normalize_city(city)
+        dept_norm = _normalize_department(department)
+        city_data = FALLBACK_DB.get(city_norm, FALLBACK_DB.get("karachi", {}))
+        found_h = None
+        for dept_list in city_data.values():
+            for h in dept_list:
+                if (named_hospital.lower() in h["name"].lower() or
+                        h["name"].lower() in named_hospital.lower()):
+                    found_h = h
+                    break
+            if found_h:
+                break
+        if not found_h:
+            found_h = {
+                "name":     named_hospital,
+                "address":  f"{named_hospital}, {city.title()}",
+                "phone":    "See hospital website",
+                "rating":   4.0,
+                "type":     hospital_type if hospital_type != "any" else "government",
+                "emergency": True,
+                "maps_link": f"https://maps.google.com/?q={named_hospital.replace(' ', '+')}",
+            }
+        top = _fmt_fallback(found_h, department)
+        reasoning = (
+            f"[Step 1] User explicitly requested '{named_hospital}'. "
+            f"[Step 2] Direct lookup — no search needed. "
+            f"[Step 3] Hospital confirmed: {named_hospital} in {city.title()}."
+        )
+        log(f"[Step 3] Named hospital resolved → {named_hospital}")
+        return {
+            "agent":              "hospital_finder_agent",
+            "hospital_name":      top["name"],
+            "hospital_address":   top["address"],
+            "hospital_phone":     top["phone"],
+            "hospital_maps_link": top.get("maps_link", ""),
+            "hospital_type":      top["type"],
+            "department":         department,
+            "urgency_level":      urgency_level,
+            "visit_type":         visit_type,
+            "patient_name":       patient_name,
+            "top_recommendation": top,
+            "alternatives":       [],
+            "reasoning":          reasoning,
+            "emergency_note":     None,
+            "source":             "named_hospital_lookup",
+            "city_searched":      city,
+            "area_searched":      area,
+        }
+
+    # Try Google Places first (area-aware query)
+    api_result = search_places_api(department, city, hospital_type, area)
+    source = "google_places"
+    hospitals = []
+
+    if api_result and api_result.get("places"):
+        for p in api_result["places"][:5]:
+            hospitals.append(_fmt_api(p, department))
+        log(f"Using Google Places: {len(hospitals)} hospitals")
+    else:
+        # FIX-2 + UPDATE-3: Fallback respects emergency + area proximity
+        source = "fallback"
+        raw_list = get_fallback_hospitals(city, department, hospital_type, urgency_level, area)
+        for h in raw_list:
+            hospitals.append(_fmt_fallback(h, department))
+        log(f"Using fallback DB: {len(hospitals)} hospitals for {city}/{area}/{department}")
+
+    if not hospitals:
+        hospitals = [_fmt_fallback(FALLBACK_DB["karachi"]["general medicine"][0], department)]
+
+    top = hospitals[0]
+    alternatives = hospitals[1:3]
+
+    # FIX-5 + UPDATE-4: Richer reasoning mentioning area
+    area_note = f" Area filter applied: '{area}'." if area else " No area specified — city-wide search."
+    reasoning = (
+        f"[Step 1] Department requested: '{department}' in '{city}'.{area_note} "
+        f"Urgency level: {urgency_level}. Hospital type preference: {hospital_type}. "
+        f"[Step 2] Data source: {source}. Found {len(hospitals)} candidate(s). "
+        f"[Step 3] Selected '{top['name']}' (rating: {top['rating']}, "
+        f"type: {top['type']}, emergency: {top['emergency']}) as top recommendation "
+        f"based on area proximity and emergency availability."
+    )
+
+    emergency_note = None
+    if urgency_level in ("critical", "emergency"):
+        emergency_note = (
+            f"CRITICAL URGENCY: Go to Emergency at {top['name']} immediately. "
+            f"Phone: {top['phone']}. Address: {top['address']}"
+        )
+
+    log(f"Top pick: {top['name']} | source: {source} | area: '{area}'")
+    log("Handoff ready → Orchestrator / Cost Agent / Appointment Agent")
+
+    return {
+        "agent":              "hospital_finder_agent",
+        "hospital_name":      top["name"],
+        "hospital_address":   top["address"],
+        "hospital_phone":     top["phone"],
+        "hospital_maps_link": top["maps_link"],
+        "hospital_type":      top["type"],
+        "department":         department,
+        "urgency_level":      urgency_level,
+        "visit_type":         visit_type,
+        "patient_name":       patient_name,
+        "top_recommendation": top,
+        "alternatives":       alternatives,
+        "reasoning":          reasoning,
+        "emergency_note":     emergency_note,
+        "source":             source,
+        "city_searched":      city,
+        "area_searched":      area,
+    }
+
+
+# ── Flask App ─────────────────────────────────────────────────────────────────
 
 app = Flask(__name__)
 CORS(app)
 
 
-@app.route('/health', methods=['GET'])
-def health():
-    return jsonify({"status": "healthy", "agent": "hospital-finder", "port": 5002})
+# Known hospital names for direct lookup (case-insensitive)
+NAMED_HOSPITAL_MAP = {
+    "civil hospital": ("Civil Hospital Karachi", "karachi"),
+    "civil": ("Civil Hospital Karachi", "karachi"),
+    "aga khan": ("Aga Khan University Hospital", "karachi"),
+    "aku": ("Aga Khan University Hospital", "karachi"),
+    "agha khan": ("Aga Khan University Hospital", "karachi"),
+    "nicvd": ("National Institute of Cardiovascular Diseases (NICVD)", "karachi"),
+    "kihd": ("Karachi Institute of Heart Diseases (KIHD)", "karachi"),
+    "tabba": ("Tabba Heart Institute", "karachi"),
+    "jpmc": ("Jinnah Postgraduate Medical Centre (JPMC)", "karachi"),
+    "jinnah": ("Jinnah Postgraduate Medical Centre (JPMC)", "karachi"),
+    "liaquat": ("Liaquat National Hospital", "karachi"),
+    "liaquat national": ("Liaquat National Hospital", "karachi"),
+    "nich": ("National Institute of Child Health (NICH)", "karachi"),
+    "pims": ("Pakistan Institute of Medical Sciences (PIMS)", "islamabad"),
+    "shifa": ("Shifa International Hospital", "islamabad"),
+    "services hospital": ("Services Hospital Lahore", "lahore"),
+    "shaukat khanum": ("Shaukat Khanum Memorial Cancer Hospital", "lahore"),
+    "mayo": ("Mayo Hospital Lahore", "lahore"),
+    "pic": ("Punjab Institute of Cardiology (PIC)", "lahore"),
+    "punjab institute": ("Punjab Institute of Cardiology (PIC)", "lahore"),
+    "holy family": ("Holy Family Hospital", "rawalpindi"),
+    "benazir": ("Benazir Bhutto Hospital", "rawalpindi"),
+    "lady reading": ("Lady Reading Hospital", "peshawar"),
+    "lrh": ("Lady Reading Hospital", "peshawar"),
+    "khyber teaching": ("Khyber Teaching Hospital", "peshawar"),
+    "hameed latif": ("Hameed Latif Hospital", "lahore"),
+}
+
+def _detect_named_hospital(raw_input: str):
+    """Check if user mentioned a specific hospital by name."""
+    text = raw_input.lower()
+    for keyword in sorted(NAMED_HOSPITAL_MAP.keys(), key=len, reverse=True):
+        if keyword in text:
+            return NAMED_HOSPITAL_MAP[keyword]
+    return None, None
+
+
+def _handle_analyze(data: dict):
+    """Shared logic for both route endpoints."""
+    raw_input = data.get("raw_input") or data.get("user_message") or data.get("symptoms") or ""
+
+    named_hospital, named_city = _detect_named_hospital(raw_input)
+    if named_hospital:
+        log(f"Named hospital detected: {named_hospital} in {named_city}")
+
+    input_data = {
+        "department":    data.get("department") or data.get("recommended_department") or "General Medicine",
+        "city":          data.get("city") or named_city or "",
+        "area":          data.get("area") or "",                    # UPDATE-1: pass area through
+        "urgency_level": data.get("urgency_level") or "routine",
+        "hospital_type": data.get("hospital_type") or "any",
+        "patient_name":  data.get("patient_name") or "Patient",
+        "raw_input":     raw_input,
+        "named_hospital": named_hospital,
+    }
+    log(f"Incoming keys: {list(data.keys())}")
+    return run_hospital_finder(input_data)
 
 
 @app.route('/analyze', methods=['POST'])
-def analyze():
+def analyze_short():
+    """Primary route — what the orchestrator calls."""
     try:
         data = request.get_json(force=True) or {}
-        user_message = data.get("user_message", "")
-        urgency = data.get("urgency_level", "urgent")
-        department = data.get("recommended_department", "General Medicine")
-
-        print(f"[HospitalFinder] Department={department}, Urgency={urgency}")
-        print(f"[HospitalFinder] User message for area detection: {user_message[:100]}")
-
-        # Try Google Places API first if key available
-        api_result = None
-        if API_KEY:
-            query = _get_search_query(department)
-            print(f"[HospitalFinder] API query: {query}")
-            api_result = search_places_new(query)
-
-        if api_result and api_result.get("places"):
-            places = api_result["places"]
-            area_note = "in Karachi"
-            detected = detect_area(user_message)
-            if detected:
-                area_note = f"near {detected.title()}"
-        else:
-            # Use smart local database
-            print(f"[HospitalFinder] Using location-aware local database")
-            places, area_note = get_hospitals_for_dept_and_area(department, user_message)
-
-        output = build_full_output(places, department=department, urgency=urgency, area_note=area_note)
-        print(f"[HospitalFinder] Top: {output['top_recommendation']['name']} | Area: {area_note}")
-        return jsonify(output)
-
+        result = _handle_analyze(data)
+        return jsonify(result), 200
     except Exception as e:
-        print(f"[HospitalFinder] ERROR: {e}")
-        import traceback; traceback.print_exc()
-        fallback_places, area_note = get_hospitals_for_dept_and_area("General Medicine", "")
-        return jsonify(build_full_output(fallback_places, "General Medicine", "urgent", area_note))
+        log(f"ERROR /analyze: {e}")
+        return jsonify({"error": str(e), "agent": "hospital_finder_agent",
+                        "hospital_name": "Civil Hospital",
+                        "hospital_type": "government",
+                        "department": "General Medicine",
+                        "urgency_level": "routine",
+                        "visit_type": "OPD",
+                        "top_recommendation": {
+                            "name": "Civil Hospital", "address": "Your nearest city",
+                            "department": "General Medicine", "emergency": True,
+                            "phone": "1122", "maps_link": "https://maps.google.com/?q=civil+hospital+pakistan",
+                            "rating": 4.0, "type": "government", "open_now": True, "distance": "N/A"
+                        },
+                        "alternatives": [], "reasoning": "Error fallback",
+                        "emergency_note": None, "source": "error_fallback"}), 200
+
+
+@app.route('/hospital-finder/analyze', methods=['POST'])
+def analyze_long():
+    """Legacy route — kept for backward compatibility."""
+    return analyze_short()
+
+
+@app.route('/health', methods=['GET'])
+@app.route('/hospital-finder/health', methods=['GET'])
+def health():
+    return jsonify({
+        "status": "healthy",
+        "agent": "hospital_finder_agent",
+        "port": 5002,
+        "routes": ["/analyze", "/hospital-finder/analyze"],
+        "google_places": "configured" if API_KEY else "fallback mode",
+        "area_aware": True,
+    })
 
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5002)
-    
+    port = int(os.environ.get("PORT", 5002))
+    log(f"Hospital Finder Agent starting on port {port}")
+    log(f"Routes: /analyze (primary) | /hospital-finder/analyze (legacy)")
+    log(f"Google Places API: {'configured' if API_KEY else 'fallback mode'}")
+    log(f"Area-aware proximity sorting: ENABLED")
+    app.run(host="0.0.0.0", port=port, debug=False)

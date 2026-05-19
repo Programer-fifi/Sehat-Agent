@@ -1,256 +1,298 @@
+"""
+orchestrator/orchestrator.py  —  UPDATED VERSION
+────────────────────────────────────────────────────────────────
+UPDATES (on top of existing fixes):
+  UPDATE-1  process_request() now accepts city= and area= kwargs
+            → Passed in from orchestrator_server from the UI location selector
+  UPDATE-2  city/area injected into base_payload so all agent callers
+            automatically send it to hospital finder agent
+  UPDATE-3  If city not provided, falls back to keyword detection as before
+
+All original FIX-1 through FIX-7 logic preserved unchanged.
+"""
+
 import os
 import time
 from datetime import datetime
+
 from google import genai
-from agent_caller import call_agent, call_agents_parallel
+from agent_caller import (
+    call_agent,
+    call_agents_parallel,
+    call_agents_sequential_appointment,
+    call_agents_sequential_hospital_only,
+    _extract_department_hint,
+    _extract_city_hint,
+    _extract_hospital_type_hint,
+    _extract_hospital_name_from_message,
+)
 from response_combiner import combine_responses
 
 
-def fallback_intent(text):
-    text = text.lower()
-    emergency_keywords = [
+# ── Fallback Intent Detection ─────────────────────────────────────────────────
+
+def fallback_intent(text: str) -> str:
+    """
+    FIX-6: Keyword-based intent — runs when Gemini quota exhausted.
+    Emergency checked FIRST (highest priority).
+    """
+    t = text.lower()
+
+    # ── EMERGENCY — always first ──────────────────────────────────────────────
+    emergency_kw = [
         "emergency", "heart attack", "bleeding", "stroke", "dying",
-        "help fast", "urgent", "unconscious", "heat stroke", "heatstroke",
-        "snake bite", "accident", "seizure", "head injury", "poison",
-        "breathing stopped", "ambulance",
-        "behosh", "behoshi", "behosh ho gaya", "behosh hogaya",
-        "hosh nahi", "hosh kho diya",
-        "dil ka daura", "saanp ne kaata", "hadsa",
-        "khoon nahi ruk raha", "fit", "fitting",
-        "sar pe chot", "zeher", "saans nahi",
-        "maut", "mar raha",
+        "unconscious", "heat stroke", "heatstroke", "snake bite",
+        "accident", "seizure", "head injury", "poison",
+        "not breathing", "ambulance", "help fast",
+        "behosh", "behoshi", "hosh nahi", "hosh kho",
+        "dil ka daura", "dil ka dora",
+        "saanp ne kaata", "saanp kata",
+        "hadsa", "haadsa",
+        "khoon nahi ruk", "khoon band nahi",
+        "fit agai", "fitting", "mirgi",
+        "sar pe chot", "sar ki chot",
+        "zeher", "zahar",
+        "saans nahi", "saans ruk",
+        "mar raha", "mar rahi", "maut",
+        "coma",
     ]
-    if any(word in text for word in emergency_keywords):
+    if any(kw in t for kw in emergency_kw):
         return "EMERGENCY"
-    elif any(word in text for word in ['book', 'appointment', 'schedule']):
+
+    # ── APPOINTMENT ───────────────────────────────────────────────────────────
+    appt_kw = [
+        "appointment", "book", "schedule", "booking",
+        "milna hai", "time lena", "time chahiye",
+        "slot", "token", "register",
+        "mujhe agha khan", "mujhe shifa", "mujhe pims",
+        "mujhe nicvd", "mujhe civil", "mujhe liaquat",
+        "hospital main appointment", "hospital mein appointment",
+    ]
+    if any(kw in t for kw in appt_kw):
         return "APPOINTMENT_NEEDED"
-    elif any(word in text for word in ['hospital', 'clinic', 'where to go', 'location']):
+
+    # ── HOSPITAL SEARCH ───────────────────────────────────────────────────────
+    hospital_kw = [
+        "hospital", "clinic", "where to go", "kahan jaun",
+        "nearest", "qareeb", "aspatal", "location",
+        "konsa hospital", "kaun sa hospital",
+        "kareeb hospital", "nazdeek hospital",
+        "cardiology department kahan", "department kahan milega",
+    ]
+    if any(kw in t for kw in hospital_kw):
         return "HOSPITAL_NEEDED"
-    elif any(word in text for word in ['cost', 'price', 'fee', 'expensive', 'charge']):
+
+    # ── COST ──────────────────────────────────────────────────────────────────
+    cost_kw = [
+        "cost", "price", "fee", "fees", "charge", "charges",
+        "kitna paisa", "kitni fees", "payment", "expensive",
+        "kitna lagega", "kharch", "paisa kitna",
+    ]
+    if any(kw in t for kw in cost_kw):
         return "COST_INQUIRY"
-    elif any(word in text for word in ['report', 'lab', 'test', 'result', 'xray', 'mri']):
+
+    # ── REPORT ────────────────────────────────────────────────────────────────
+    report_kw = [
+        "report", "lab", "test result", "xray", "x-ray",
+        "mri", "ultrasound", "cbc", "blood test", "scan", "result",
+    ]
+    if any(kw in t for kw in report_kw):
         return "REPORT_ANALYSIS"
+
     return "SYMPTOM_ONLY"
 
 
-def detect_intent(user_message, trace_logs):
-    api_key = os.environ.get("GEMINI_API_KEY")
+# ── Gemini Intent Detection ───────────────────────────────────────────────────
+
+def detect_intent(user_message: str, trace_logs: list) -> str:
+    """
+    FIX-7: Gemini-based intent — falls back to keyword matching on any failure.
+    """
+    api_key = os.environ.get("GEMINI_API_KEY") or os.environ.get("GEMINI_API_KEY_2")
     if not api_key:
-        msg = f"[MAIN AGENT] {datetime.now().strftime('%H:%M:%S')} GEMINI_API_KEY not found. Using fallback."
-        print(msg)
-        trace_logs.append(msg)
+        trace_logs.append(f"[MAIN AGENT] {_ts()} No API key — using fallback intent")
         return fallback_intent(user_message)
 
     try:
         client = genai.Client(api_key=api_key)
         prompt = f"""
-Analyze the following user message and classify its intent into EXACTLY ONE of the following categories:
-SYMPTOM_ONLY, HOSPITAL_NEEDED, APPOINTMENT_NEEDED, REPORT_ANALYSIS, COST_INQUIRY, FULL_SERVICE, EMERGENCY.
+Analyze this user message and classify intent into EXACTLY ONE of these categories:
+SYMPTOM_ONLY, HOSPITAL_NEEDED, APPOINTMENT_NEEDED, REPORT_ANALYSIS,
+COST_INQUIRY, FULL_SERVICE, EMERGENCY
 
-Rules for classification:
-- If it's a severe medical emergency (heart attack, severe bleeding, stroke, etc.), classify as EMERGENCY.
-- If they only want to know about symptoms or diseases, classify as SYMPTOM_ONLY.
-- If they want to find a hospital, classify as HOSPITAL_NEEDED.
-- If they want to book an appointment, classify as APPOINTMENT_NEEDED.
-- If they upload or mention a medical report, classify as REPORT_ANALYSIS.
-- If they ask about costs or prices, classify as COST_INQUIRY.
-- If they ask for multiple things (e.g., symptoms AND booking an appointment), classify as FULL_SERVICE.
+Rules:
+- EMERGENCY: severe medical emergency (heart attack, unconscious, severe bleeding,
+  stroke, poisoning, accident, not breathing, behosh, dil ka daura)
+- SYMPTOM_ONLY: describing symptoms, asking about illness
+- HOSPITAL_NEEDED: wants to find a hospital/clinic, asking where to go
+- APPOINTMENT_NEEDED: wants to book/schedule an appointment at a specific or any hospital
+- REPORT_ANALYSIS: uploading or mentioning a medical report/lab result
+- COST_INQUIRY: asking about fees, costs, charges
+- FULL_SERVICE: asking for multiple things simultaneously
 
 User Message: {user_message}
 
-Output ONLY the category name. No other text.
+Output ONLY the category name. Nothing else.
 """
         response = client.models.generate_content(
-            model='gemini-2.5-flash',
+            model='gemini-2.0-flash',
             contents=prompt,
         )
         intent = response.text.strip().upper()
-        valid_intents = [
-            "SYMPTOM_ONLY", "HOSPITAL_NEEDED", "APPOINTMENT_NEEDED",
-            "REPORT_ANALYSIS", "COST_INQUIRY", "FULL_SERVICE", "EMERGENCY"
-        ]
-        if intent not in valid_intents:
+        valid = {"SYMPTOM_ONLY", "HOSPITAL_NEEDED", "APPOINTMENT_NEEDED",
+                 "REPORT_ANALYSIS", "COST_INQUIRY", "FULL_SERVICE", "EMERGENCY"}
+
+        if intent not in valid:
+            trace_logs.append(f"[MAIN AGENT] {_ts()} Invalid Gemini intent '{intent}' — fallback")
             return fallback_intent(user_message)
+
         return intent
+
     except Exception as e:
-        msg = f"[MAIN AGENT] {datetime.now().strftime('%H:%M:%S')} Gemini API error (fallback triggered): {str(e)}"
-        print(msg)
-        trace_logs.append(msg)
+        trace_logs.append(f"[MAIN AGENT] {_ts()} Gemini API error (fallback triggered): {str(e)}")
         return fallback_intent(user_message)
 
 
-def process_request(user_message, session_id, report_image=None, conversation_history=None):
+def _ts():
+    return datetime.now().strftime("%H:%M:%S")
+
+
+# ── Main Orchestration ────────────────────────────────────────────────────────
+
+def process_request(
+    user_message,
+    session_id,
+    report_image=None,
+    conversation_history=None,
+    language="roman_urdu",
+    city="",        # UPDATE-1: city from UI location selector
+    area="",        # UPDATE-1: area from UI location selector
+):
     start_time = time.time()
     trace_logs = []
 
     def log_trace(message):
-        log_msg = f"[MAIN AGENT] {datetime.now().strftime('%H:%M:%S')} {message}"
-        print(log_msg)
-        trace_logs.append(log_msg)
+        msg = f"[MAIN AGENT] {_ts()} {message}"
+        print(msg)
+        trace_logs.append(msg)
 
     log_trace(f"Starting orchestration for session {session_id}")
 
+    # UPDATE-2: Resolve city — UI selection takes priority over keyword detection
+    resolved_city = city.strip().lower() if city and city.strip() else _extract_city_hint(user_message)
+    resolved_area = area.strip() if area and area.strip() else ""
+
+    if resolved_city:
+        log_trace(f"Location: city='{resolved_city}' area='{resolved_area}'")
+    else:
+        log_trace("No city provided — agents will use keyword detection")
+
+    # ── Detect Intent ─────────────────────────────────────────────────────────
     intent = detect_intent(user_message, trace_logs)
     log_trace(f"Detected intent: {intent}")
 
-    # Base payload sent to all agents
+    # ── Base payload ──────────────────────────────────────────────────────────
+    # UPDATE-2: city and area always included so hospital finder gets them
     base_payload = {
-        "session_id": session_id,
-        "user_message": user_message,
-        "conversation_history": conversation_history or []
+        "session_id":            session_id,
+        "user_message":          user_message,
+        "conversation_history":  conversation_history or [],
+        "language":              language,
+        "raw_input":             user_message,
+        "city":                  resolved_city,   # ← from UI selector
+        "area":                  resolved_area,   # ← from UI selector
     }
     if report_image:
         base_payload["report_image"] = report_image
 
+    # ── Route by Intent ───────────────────────────────────────────────────────
     agent_outputs = {}
-    agents_used = []
 
-    # ── PHASE 1: Always call Symptom Agent first (port 5001) ─────────────────
-    # We need its output (department, urgency) to feed hospital finder
-    # and appointment agent correctly.
-    if intent not in ("COST_INQUIRY",):
-        log_trace("Phase 1: Calling Symptom Agent (5001)...")
-        symptom_out = call_agent(5001, base_payload, log_trace)
-        agent_outputs[5001] = symptom_out
-        agents_used.append("Agent-5001")
-    else:
-        # Cost inquiry — still call symptom agent for department context
-        log_trace("Phase 1: Calling Symptom Agent (5001) for department context...")
-        symptom_out = call_agent(5001, base_payload, log_trace)
-        agent_outputs[5001] = symptom_out
-        agents_used.append("Agent-5001")
+    # ── SYMPTOM_ONLY ──────────────────────────────────────────────────────────
+    if intent in ("SYMPTOM_ONLY", "REPORT_ANALYSIS"):
+        log_trace("Flow: Symptom Agent (5001) → Cost Agent (5003) with symptom-based cost")
+        symptom_result = call_agent(5001, base_payload, log_trace)
+        agent_outputs[5001] = symptom_result
 
-    # Extract symptom agent results to enrich downstream payloads
-    recommended_department = "General Medicine"
-    urgency_level = "urgent"
-    hospital_name = "Aga Khan University Hospital"
-
-    if symptom_out and not symptom_out.get("error"):
-        recommended_department = symptom_out.get("recommended_department", "General Medicine")
-        raw_urgency = symptom_out.get("urgency_level", "MEDIUM").lower()
-        urgency_map = {
-            "low": "routine",
-            "medium": "urgent",
-            "high": "urgent",
-            "critical": "emergency",
-            "emergency": "emergency",
-        }
-        urgency_level = urgency_map.get(raw_urgency, "urgent")
-        log_trace(f"Symptom Agent → Department: {recommended_department}, Urgency: {urgency_level}")
-
-    # ── EMERGENCY OVERRIDE: force correct dept/urgency regardless of symptom agent ──
-    if intent == "EMERGENCY":
-        recommended_department = "Emergency"
-        urgency_level = "emergency"
-        log_trace("EMERGENCY intent → overriding department=Emergency, urgency=emergency")
-
-    # ── PHASE 2: Determine which agents to call ───────────────────────────────
-    needs_hospital  = intent in ("HOSPITAL_NEEDED", "APPOINTMENT_NEEDED", "FULL_SERVICE", "EMERGENCY")
-    needs_cost      = intent in ("COST_INQUIRY", "FULL_SERVICE", "EMERGENCY")
-    needs_appt      = intent in ("APPOINTMENT_NEEDED", "FULL_SERVICE", "EMERGENCY")
-
-    import concurrent.futures
-
-    # ── PHASE 2a: Hospital Finder runs FIRST (appointment agent depends on it) ─
-    if needs_hospital:
-        log_trace("Phase 2a: Calling Hospital Finder (5002)...")
-        hospital_payload = {
-            **base_payload,
-            "recommended_department": recommended_department,
-            "urgency_level": urgency_level,
-        }
-        hosp_out = call_agent(5002, hospital_payload, log_trace)
-        agent_outputs[5002] = hosp_out
-        agents_used.append("Agent-5002")
-
-        # Extract the actual recommended hospital name for downstream agents
-        if hosp_out and not hosp_out.get("error"):
-            top_rec = hosp_out.get("top_recommendation", {})
-            hospital_name = top_rec.get("name", hospital_name)
-            log_trace(f"Hospital Finder → Top hospital: {hospital_name}")
-
-    # ── PHASE 2b: Cost + Appointment run in parallel after hospital finder ─────
-    phase2b_ports = []
-    if needs_cost:
-        phase2b_ports.append(5003)
-    if needs_appt:
-        phase2b_ports.append(5004)
-
-    if phase2b_ports:
-        log_trace(f"Phase 2b: Calling agents {phase2b_ports} with resolved hospital name...")
-
+        symptom_dept    = symptom_result.get("recommended_department") or _extract_department_hint(user_message)
+        symptom_urgency = symptom_result.get("urgency_level", "routine") or "routine"
         cost_payload = {
             **base_payload,
-            "recommended_department": recommended_department,
-            "urgency_level": urgency_level,
-            "hospital_type": "private",
-            "visit_type": "OPD",
+            "department":             symptom_dept,
+            "recommended_department": symptom_dept,
+            "urgency_level":          symptom_urgency,
+            "hospital_name":          "General Hospital",
+            "hospital_type":          "any",
+            "visit_type":             "OPD",
         }
-        appointment_payload = {
+        log_trace(f"Calling Cost Agent with symptom dept: {symptom_dept}, urgency: {symptom_urgency}")
+        cost_result = call_agent(5003, cost_payload, log_trace)
+        agent_outputs[5003] = cost_result
+
+    # ── HOSPITAL_NEEDED ───────────────────────────────────────────────────────
+    elif intent == "HOSPITAL_NEEDED":
+        log_trace("Flow: Sequential — Hospital Finder → Cost Agent")
+        agent_outputs = call_agents_sequential_hospital_only(base_payload, log_trace)
+
+    # ── APPOINTMENT_NEEDED ────────────────────────────────────────────────────
+    elif intent == "APPOINTMENT_NEEDED":
+        log_trace("Flow: Sequential — Hospital Finder → Validator → Cost + Appointment")
+        specific_hospital = _extract_hospital_name_from_message(user_message)
+        if specific_hospital:
+            log_trace(f"User mentioned specific hospital: {specific_hospital}")
+        agent_outputs = call_agents_sequential_appointment(base_payload, log_trace)
+
+    # ── COST_INQUIRY ──────────────────────────────────────────────────────────
+    elif intent == "COST_INQUIRY":
+        log_trace("Flow: Sequential — Hospital Finder → Cost Agent")
+        agent_outputs = call_agents_sequential_hospital_only(base_payload, log_trace)
+
+    # ── FULL_SERVICE ──────────────────────────────────────────────────────────
+    elif intent == "FULL_SERVICE":
+        log_trace("Flow: Symptom Agent → Sequential Appointment Chain")
+        symptom_result = call_agent(5001, base_payload, log_trace)
+        agent_outputs[5001] = symptom_result
+
+        symptom_dept = (
+            symptom_result.get("recommended_department") or
+            _extract_department_hint(user_message)
+        )
+        symptom_urgency = symptom_result.get("urgency_level", "routine")
+
+        enriched = {
             **base_payload,
-            "hospital_name": hospital_name,
-            "department": recommended_department,
-            "urgency_level": urgency_level,
-            "patient_name": "Patient",
-            "recommended_department": recommended_department,
+            "department":    symptom_dept,
+            "urgency_level": symptom_urgency,
         }
+        chain_results = call_agents_sequential_appointment(enriched, log_trace)
+        agent_outputs.update(chain_results)
 
-        port_payloads = {}
-        for port in phase2b_ports:
-            if port == 5003:
-                port_payloads[port] = cost_payload
-            elif port == 5004:
-                port_payloads[port] = appointment_payload
-            else:
-                port_payloads[port] = base_payload
-
-        with concurrent.futures.ThreadPoolExecutor(max_workers=len(phase2b_ports)) as executor:
-            future_to_port = {
-                executor.submit(call_agent, port, port_payloads[port], log_trace): port
-                for port in phase2b_ports
-            }
-            for future in concurrent.futures.as_completed(future_to_port):
-                port = future_to_port[future]
-                try:
-                    agent_outputs[port] = future.result()
-                    agents_used.append(f"Agent-{port}")
-                except Exception as e:
-                    log_trace(f"Agent {port} exception: {e}")
-                    agent_outputs[port] = {"error": True, "message": str(e)}
-
-    # ── Validator Agent (5005) ────────────────────────────────────────────────
-    if needs_hospital and 5002 in agent_outputs:
-        hospital_output = agent_outputs.get(5002, {})
-
-        original_request = {
-            "required_department": recommended_department,
-            "urgency_level": urgency_level,
-            "hospital_preference": "GOVERNMENT"
+    # ── EMERGENCY ─────────────────────────────────────────────────────────────
+    elif intent == "EMERGENCY":
+        log_trace("Flow: EMERGENCY — all agents parallel (speed priority)")
+        emergency_payload = {
+            **base_payload,
+            "urgency_level":          "critical",
+            "department":             "Emergency",
+            "recommended_department": "Emergency",
+            "visit_type":             "Emergency",
+            "hospital_type":          "any",
         }
+        agent_outputs = call_agents_parallel([5001, 5002, 5003, 5004], emergency_payload, log_trace)
 
-        log_trace("Calling Validator Agent (5005)...")
-        validator_result = call_agent(5005, {
-            "hospital_finder_output": hospital_output,
-            "original_request": original_request
-        }, log_trace)
+    # ── UNKNOWN ───────────────────────────────────────────────────────────────
+    else:
+        log_trace(f"Unknown intent '{intent}' — defaulting to symptom only")
+        agent_outputs = call_agents_parallel([5001], base_payload, log_trace)
 
-        validation_status = validator_result.get("validation_status", "UNKNOWN")
-        log_trace(f"Validator returned: {validation_status}")
-
-        if validation_status == "REJECTED":
-            log_trace(f"Validator REJECTED: {validator_result.get('validator_note', 'No reason')}")
-            log_trace("Proceeding with best available result despite rejection")
-        elif validation_status == "APPROVED":
-            log_trace("Validator APPROVED hospital recommendation ✓")
-
-        agent_outputs[5005] = validator_result
-        agents_used.append("Agent-5005")
-
-    # ── Combine all agent responses ───────────────────────────────────────────
+    # ── Combine responses ─────────────────────────────────────────────────────
+    agents_used = [f"Agent-{port}" for port in agent_outputs.keys()]
     log_trace("Combining agent responses")
-    final_response = combine_responses(
-        session_id, intent, agents_used, agent_outputs, start_time, trace_logs
-    )
 
+    final_response = combine_responses(
+        session_id, intent, agents_used,
+        agent_outputs, start_time, trace_logs,
+    )
     final_response["agent_trace"] = trace_logs
+
     return final_response

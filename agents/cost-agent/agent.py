@@ -1,315 +1,435 @@
 """
-cost_agent/agent.py
+cost_agent/agent.py  —  FIXED VERSION
 ────────────────────────────────────────────────────────────────
 Cost Agent — Sehat Agent (Pakistan's AI Medical Navigation System)
 
-Receives structured JSON from the orchestrator (or Hospital Finder Agent),
-loads the system prompt from prompt.md, calls Gemini 2.5 Flash, and
-returns a validated JSON cost estimate.
-
-Expected input (dict or JSON string):
-    {
-        "recommended_department": str,
-        "urgency_level":          str,   # "routine" | "urgent" | "critical" | "emergency"
-        "hospital_name":          str,
-        "hospital_type":          str,   # "private" | "government"
-        "visit_type":             str    # "OPD" | "Emergency"
-    }
-
-Returns (dict):
-    {
-        "estimated_cost":           { "minimum": int, "maximum": int, "currency": "PKR" },
-        "breakdown":                { "consultation": str, "probable_tests": str, "medicine_estimate": str },
-        "payment_advice":           str,
-        "bring_checklist":          list[str],
-        "insurance_applicable":     bool,
-        "government_option_available": bool,
-        "government_cost":          str,
-        "reasoning":                str,
-        "disclaimer":               str
-    }
+FIXES APPLIED:
+  FIX-1  Dual route: /analyze AND /cost-agent/analyze both work
+          → Was causing 404 from orchestrator (same issue as hospital finder)
+  FIX-2  Accept both "department" AND "recommended_department" field names
+          → Was causing "PKR 0-0" because field name mismatch
+  FIX-3  Removed strict validation — graceful defaults for ALL missing fields
+          → Emergency cases were crashing because hospital_type missing
+  FIX-4  Instant lookup always runs — Gemini is optional enhancement only
+          → Even with 429 quota error, real cost estimates always show
+  FIX-5  hospital_type default changed from "private" to smarter inference
+          → If urgency=critical/emergency → government hospital assumed
+  FIX-6  department field normalized before lookup (handles urdu/aliases)
 """
 
 import json
 import os
 import re
-import sys
+from datetime import datetime
 from pathlib import Path
 
-from dotenv import load_dotenv
+from flask import Flask, request, jsonify
+from flask_cors import CORS
 
-from google import genai
-from google.genai import types as genai_types
+# ── Logger ────────────────────────────────────────────────────────────────────
 
-# ── Constants ────────────────────────────────────────────────────────────────
+def log(msg):
+    print(f"[COST AGENT] {datetime.now().strftime('%H:%M:%S')} {msg}")
 
-MODEL_NAME = "gemini-2.5-flash"
-PROMPT_FILE = Path(__file__).parent / "prompt.md"
 
-REQUIRED_FIELDS = {
-    "recommended_department",
-    "urgency_level",
-    "hospital_name",
-    "hospital_type",
-    "visit_type",
+# ── Env Loader ────────────────────────────────────────────────────────────────
+
+def _load_env():
+    env_path = Path(__file__).parent / '.env'
+    if env_path.exists():
+        with open(env_path) as f:
+            for line in f:
+                line = line.strip()
+                if line and not line.startswith('#') and '=' in line:
+                    k, v = line.split('=', 1)
+                    os.environ.setdefault(k.strip(), v.strip(' "\''))
+
+_load_env()
+
+
+# ── Cost Lookup Table ─────────────────────────────────────────────────────────
+# FIX-4: This ALWAYS runs — no Gemini needed for cost estimates
+
+COST_TABLE = [
+    # (keywords_list,               (private_min, private_max))
+    (["emergency", "critical"],     (5000, 20000)),
+    (["icu", "intensive"],          (8000, 30000)),
+    (["cardiology", "cardiac",
+      "heart", "dil"],              (3500, 15000)),
+    (["neurology", "neuro",
+      "brain", "dimagh"],           (3000, 12000)),
+    (["oncology", "cancer",
+      "tumor"],                     (5000, 25000)),
+    (["orthopedic", "ortho",
+      "bone", "haddi", "joint"],    (2000,  8000)),
+    (["pediatric", "child",
+      "children", "bacha",
+      "bachcha"],                   (1000,  5000)),
+    (["gynecology", "gynaecology",
+      "obs", "maternity"],          (1500,  8000)),
+    (["radiology", "imaging",
+      "mri", "ct scan", "xray",
+      "x-ray", "ultrasound"],       (2000, 10000)),
+    (["gastro", "stomach",
+      "liver", "hepatology"],       (2000,  8000)),
+    (["urology", "kidney"],         (2000,  8000)),
+    (["dermatology", "skin",
+      "jild"],                      (1500,  5000)),
+    (["psychiatry", "mental",
+      "psychology"],                (2000,  8000)),
+    (["ent", "ear", "nose",
+      "throat"],                    (1000,  4000)),
+    (["ophthalmology", "eye",
+      "aankh"],                     (1000,  4000)),
+    (["endocrinology", "diabetes",
+      "thyroid", "sugar"],          (1500,  6000)),
+    (["general medicine", "general",
+      "fever", "flu", "bukhar"],    (500,   3000)),
+]
+
+DEFAULT_COST_PRIVATE = (1000, 5000)
+
+# Government hospitals are ~40-50% of private costs
+GOVT_MULTIPLIER_MIN = 0.35
+GOVT_MULTIPLIER_MAX = 0.50
+
+# Department aliases for normalization
+DEPT_ALIASES = {
+    "heart": "cardiology", "cardiac": "cardiology", "dil": "cardiology",
+    "brain": "neurology",  "neuro": "neurology",    "dimagh": "neurology",
+    "child": "pediatrics", "children": "pediatrics",
+    "bachcha": "pediatrics", "bacha": "pediatrics",
+    "women": "gynecology", "gynae": "gynecology",
+    "bone": "orthopedics", "joint": "orthopedics",  "haddi": "orthopedics",
+    "skin": "dermatology", "jild": "dermatology",
+    "eye": "ophthalmology", "aankh": "ophthalmology",
+    "ear": "ent", "nose": "ent", "throat": "ent", "kaan": "ent",
+    "kidney": "urology",   "sugar": "endocrinology",
+    "cancer": "oncology",  "tumor": "oncology",
+    "mental": "psychiatry","dimagi": "psychiatry",
+    "general": "general medicine", "fever": "general medicine",
+    "bukhar": "general medicine",
 }
 
-VALID_URGENCY = {"routine", "urgent", "critical", "emergency"}
-VALID_HOSPITAL_TYPE = {"private", "government"}
-VALID_VISIT_TYPE = {"opd", "emergency"}
 
-# ── Instant Cost Lookup Table (no Gemini needed) ──────────────────────────────
-# Format: keyword (lowercase) -> (min_pkr, max_pkr)
-INSTANT_COST_TABLE = [
-    (["emergency", "critical"],          (5000, 20000)),
-    (["cardiology", "cardiac", "heart"],  (3000, 15000)),
-    (["neurology", "neuro", "brain"],     (2000, 10000)),
-    (["oncology", "cancer"],              (5000, 25000)),
-    (["orthopedic", "ortho", "bone"],     (2000, 8000)),
-    (["pediatric", "child", "children"],  (1000, 5000)),
-    (["gynecology", "gynaecology", "obs"],(1500, 8000)),
-    (["radiology", "imaging", "scan"],   (2000, 10000)),
-    (["general medicine", "general"],     (500, 3000)),
-]
-DEFAULT_COST = (1000, 5000)
+# ── Helpers ───────────────────────────────────────────────────────────────────
 
-# ── Helpers ──────────────────────────────────────────────────────────────────
+def _normalize_dept(dept: str) -> str:
+    """FIX-6: Map aliases to canonical department name."""
+    d = dept.lower().strip()
+    for alias, canonical in DEPT_ALIASES.items():
+        if alias in d:
+            return canonical
+    return d
 
 
-def _load_system_prompt() -> str:
-    """Read prompt.md from the same directory as this file."""
-    if not PROMPT_FILE.exists():
-        raise FileNotFoundError(
-            f"System prompt not found: {PROMPT_FILE}. "
-            "Ensure prompt.md is present in the cost-agent directory."
-        )
-    return PROMPT_FILE.read_text(encoding="utf-8")
-
-
-def _validate_input(data: dict) -> dict:
+def _smart_defaults(data: dict) -> dict:
     """
-    Validate required fields and normalise values.
-    Returns a cleaned copy of data, or raises ValueError with a descriptive message.
+    FIX-2 + FIX-3: Extract fields with smart fallbacks.
+    Accepts BOTH 'department' and 'recommended_department'.
+    Never crashes — always returns usable values.
     """
-    missing = REQUIRED_FIELDS - set(data.keys())
-    if missing:
-        raise ValueError(
-            f"Missing required input fields: {sorted(missing)}. "
-            f"All of the following must be provided: {sorted(REQUIRED_FIELDS)}"
-        )
+    # FIX-2: Accept either field name
+    department = (
+        data.get("recommended_department") or
+        data.get("department") or
+        "General Medicine"
+    ).strip()
 
-    empty = [k for k in REQUIRED_FIELDS if not str(data.get(k, "")).strip()]
-    if empty:
-        raise ValueError(
-            f"The following fields must not be empty: {sorted(empty)}"
-        )
+    urgency = (data.get("urgency_level") or "routine").lower().strip()
+    if urgency not in ("routine", "urgent", "critical", "emergency"):
+        urgency = "routine"
 
-    cleaned = dict(data)
+    # FIX-5: Smarter hospital_type default
+    hospital_type = (data.get("hospital_type") or "").lower().strip()
+    if hospital_type not in ("government", "private"):
+        # If urgency is critical/emergency → likely going to government hospital
+        hospital_type = "government" if urgency in ("critical", "emergency") else "private"
 
-    urgency = cleaned["urgency_level"].strip().lower()
-    if urgency not in VALID_URGENCY:
-        raise ValueError(
-            f"Invalid urgency_level '{cleaned['urgency_level']}'. "
-            f"Must be one of: {sorted(VALID_URGENCY)}"
-        )
-    cleaned["urgency_level"] = urgency
-
-    hospital_type = cleaned["hospital_type"].strip().lower()
-    if hospital_type not in VALID_HOSPITAL_TYPE:
-        raise ValueError(
-            f"Invalid hospital_type '{cleaned['hospital_type']}'. "
-            f"Must be one of: {sorted(VALID_HOSPITAL_TYPE)}"
-        )
-    cleaned["hospital_type"] = hospital_type
-
-    visit_type = cleaned["visit_type"].strip().lower()
-    if visit_type not in VALID_VISIT_TYPE:
-        raise ValueError(
-            f"Invalid visit_type '{cleaned['visit_type']}'. "
-            f"Must be one of: {sorted(VALID_VISIT_TYPE)}"
-        )
-    cleaned["visit_type"] = visit_type.upper()  # normalise back to "OPD" / "Emergency"
-
-    return cleaned
-
-
-def _extract_json_from_response(text: str) -> dict:
-    """
-    Extract the first valid JSON object from the model's response text.
-    Handles cases where the model wraps the JSON in markdown code fences.
-    """
-    # Strip markdown fences (```json ... ``` or ``` ... ```)
-    fenced = re.search(r"```(?:json)?\s*(\{.*?\})\s*```", text, re.DOTALL)
-    if fenced:
-        text = fenced.group(1)
-
-    # Fallback: find the first { ... } block in the text
-    brace_match = re.search(r"\{.*\}", text, re.DOTALL)
-    if brace_match:
-        text = brace_match.group(0)
-
-    try:
-        return json.loads(text)
-    except json.JSONDecodeError as exc:
-        raise ValueError(
-            f"Model did not return valid JSON.\n"
-            f"Parse error: {exc}\n"
-            f"Raw response snippet: {text[:500]}"
-        ) from exc
-
-
-def _build_user_message(input_data: dict) -> str:
-    """Format the validated input dict as the user turn sent to the model."""
-    return (
-        "Please calculate the cost estimate for the following patient visit.\n\n"
-        "Input from Hospital Finder Agent:\n"
-        f"```json\n{json.dumps(input_data, indent=2, ensure_ascii=False)}\n```\n\n"
-        "Return ONLY the JSON output as specified in the system prompt. "
-        "Do not include any explanation outside the JSON block."
-    )
-
-
-def _instant_cost_lookup(department: str, urgency: str, hospital_type: str, visit_type: str) -> dict:
-    """
-    Return a cost estimate instantly from the keyword table.
-    No Gemini call needed — always responds in < 10ms.
-    """
-    dept_lower = department.lower()
-    urgency_lower = urgency.lower()
-    visit_lower = visit_type.lower()
-
-    # Emergency visit overrides department cost floor
-    if urgency_lower in ("critical", "emergency") or visit_lower == "emergency":
-        minimum, maximum = 5000, 20000
+    visit_type = (data.get("visit_type") or "OPD").strip()
+    if visit_type.lower() not in ("opd", "emergency"):
+        visit_type = "Emergency" if urgency in ("critical", "emergency") else "OPD"
     else:
-        minimum, maximum = DEFAULT_COST
-        for keywords, (mn, mx) in INSTANT_COST_TABLE:
-            if any(kw in dept_lower for kw in keywords):
-                minimum, maximum = mn, mx
-                break
+        visit_type = "Emergency" if visit_type.lower() == "emergency" else "OPD"
 
-    # Government hospitals cost ~40% less
-    if hospital_type.lower() == "government":
-        minimum = int(minimum * 0.4)
-        maximum = int(maximum * 0.5)
-
-    govt_available = hospital_type.lower() == "private"
-    govt_min = int(minimum * 0.4)
-    govt_max = int(maximum * 0.5)
+    hospital_name = (data.get("hospital_name") or "Your Selected Hospital").strip()
 
     return {
-        "estimated_cost": {"minimum": minimum, "maximum": maximum, "currency": "PKR"},
-        "breakdown": {
-            "consultation": f"PKR {minimum // 3} - {maximum // 3}",
-            "probable_tests": f"PKR {minimum // 3} - {maximum // 3}",
-            "medicine_estimate": f"PKR {minimum // 3} - {maximum // 3}",
+        "department":   department,
+        "urgency":      urgency,
+        "hospital_type": hospital_type,
+        "visit_type":   visit_type,
+        "hospital_name": hospital_name,
+    }
+
+
+def _lookup_cost(department: str, urgency: str,
+                 hospital_type: str, visit_type: str) -> tuple[int, int]:
+    """Return (min_cost, max_cost) in PKR for a private hospital."""
+    dept_lower = department.lower()
+
+    # Emergency visit always gets emergency rates
+    if urgency in ("critical", "emergency") or visit_type.lower() == "emergency":
+        priv_min, priv_max = 5000, 20000
+    else:
+        priv_min, priv_max = DEFAULT_COST_PRIVATE
+        for keywords, (mn, mx) in COST_TABLE:
+            if any(kw in dept_lower for kw in keywords):
+                priv_min, priv_max = mn, mx
+                break
+
+    # Apply government discount
+    if hospital_type == "government":
+        return int(priv_min * GOVT_MULTIPLIER_MIN), int(priv_max * GOVT_MULTIPLIER_MAX)
+
+    return priv_min, priv_max
+
+
+def _payment_advice(maximum: int, hospital_type: str) -> str:
+    if maximum >= 15000:
+        return (
+            "Card zaroor laye — amount PKR 15,000 se zyada ho sakti hai. "
+            "Debit/Credit Card recommended. JazzCash / EasyPaisa bhi qabool hota hai."
+            + (" Sehat Card try karein — government hospital mein valid hai."
+               if hospital_type == "government" else "")
+        )
+    elif maximum >= 5000:
+        return (
+            "Cash aur Card dono laye — amount PKR 5,000-15,000 ke darmiyan ho sakti hai. "
+            "JazzCash / EasyPaisa bhi option hai."
+        )
+    else:
+        return (
+            "Cash kaafi hoga — amount PKR 5,000 se kam hogi. "
+            "JazzCash / EasyPaisa bhi qabool hota hai."
+        )
+
+
+# ── Core Instant Estimate ─────────────────────────────────────────────────────
+
+def _instant_estimate(fields: dict) -> dict:
+    """
+    FIX-4: Always returns a real estimate — no Gemini needed.
+    This is the PRIMARY response path.
+    """
+    dept          = _normalize_dept(fields["department"])
+    urgency       = fields["urgency"]
+    hospital_type = fields["hospital_type"]
+    visit_type    = fields["visit_type"]
+    hospital_name = fields["hospital_name"]
+
+    min_cost, max_cost = _lookup_cost(dept, urgency, hospital_type, visit_type)
+
+    # Government comparison (shown only for private hospital patients)
+    govt_min = int(min_cost * GOVT_MULTIPLIER_MIN / (GOVT_MULTIPLIER_MIN if hospital_type == "government" else 1))
+    govt_max = int(max_cost * GOVT_MULTIPLIER_MAX / (GOVT_MULTIPLIER_MAX if hospital_type == "government" else 1))
+    if hospital_type == "private":
+        govt_min = int(min_cost * GOVT_MULTIPLIER_MIN)
+        govt_max = int(min_cost * GOVT_MULTIPLIER_MAX * 2)
+        govt_available = True
+        govt_cost_str = f"PKR {govt_min:,} - {govt_max:,} (nearest government hospital mein)"
+    else:
+        govt_available = False
+        govt_cost_str = "N/A (aap already government hospital mein hain)"
+
+    # Breakdown (roughly thirds)
+    consult_min = int(min_cost * 0.35)
+    consult_max = int(max_cost * 0.35)
+    test_min    = int(min_cost * 0.40)
+    test_max    = int(max_cost * 0.40)
+    med_min     = int(min_cost * 0.25)
+    med_max     = int(max_cost * 0.25)
+
+    checklist = [
+        "CNIC / ID card (zaroor laye)",
+        "Purani prescriptions ya reports (agar hain)",
+        "Cash (minimum PKR {:,} sath rakhein)".format(min_cost),
+    ]
+    if max_cost >= 5000:
+        checklist.append("Debit / Credit Card (recommended)")
+    checklist.append("JazzCash / EasyPaisa app (backup payment)")
+    if hospital_type == "government":
+        checklist.append("Sehat Card (agar hai — government hospital mein valid hai)")
+
+    reasoning = (
+        f"[Step 1] Department: '{fields['department']}' normalized to '{dept}'. "
+        f"[Step 2] Hospital type: {hospital_type} | Urgency: {urgency} | Visit: {visit_type}. "
+        f"[Step 3] Cost table matched — base range PKR {min_cost:,}-{max_cost:,}. "
+        f"{'[Step 4] Government discount applied (35-50% of private rates).' if hospital_type == 'government' else ''} "
+        f"[Final] Estimated cost: PKR {min_cost:,} - {max_cost:,}."
+    ).strip()
+
+    return {
+        "agent": "cost_agent",
+        "estimated_cost": {
+            "minimum":  min_cost,
+            "maximum":  max_cost,
+            "currency": "PKR",
         },
-        "payment_advice": "Please carry cash or use JazzCash / EasyPaisa. Sehat Card accepted at government hospitals.",
-        "bring_checklist": [
-            "CNIC / ID card",
-            "Previous prescriptions or reports (if any)",
-            "Cash or digital payment method",
-            "Sehat Card (if applicable)",
-        ],
-        "insurance_applicable": False,
+        "breakdown": {
+            "consultation":     f"PKR {consult_min:,} - {consult_max:,}",
+            "probable_tests":   f"PKR {test_min:,} - {test_max:,}",
+            "medicine_estimate": f"PKR {med_min:,} - {med_max:,}",
+        },
+        "payment_advice":              _payment_advice(max_cost, hospital_type),
+        "bring_checklist":             checklist,
+        "insurance_applicable":        False,
         "government_option_available": govt_available,
-        "government_cost": f"PKR {govt_min} - {govt_max} (at nearest government hospital)" if govt_available else "N/A",
-        "reasoning": f"Estimate based on {department} department, {urgency} urgency, {hospital_type} hospital.",
-        "disclaimer": "Costs are approximate estimates only. Actual charges depend on tests, admission, and treatment required. Always confirm with the hospital.",
+        "government_cost":             govt_cost_str,
+        "reasoning":                   reasoning,
+        "disclaimer": (
+            "Yeh estimates approximate hain. Actual charges tests, admission, aur "
+            "treatment ke mutabiq alag ho sakte hain. Hospital se confirm zaroor karein."
+        ),
         "source": "instant_lookup",
     }
 
 
-def run_cost_agent(input_data: dict | str) -> dict:
+# ── Optional Gemini Enhancement ───────────────────────────────────────────────
+
+def _try_gemini_enhance(fields: dict, instant_result: dict) -> dict:
     """
-    Main entry point for the Cost Agent.
-    Returns an instant keyword-based estimate immediately (< 2s).
-    Optionally enhances with Gemini if API key is available.
+    Try to enhance the instant result with Gemini.
+    If Gemini fails (quota, network, etc.) silently return instant_result.
     """
-    # ── 1. Parse input ────────────────────────────────────────────────────────
+    try:
+        import google.generativeai as genai
+        api_key = os.environ.get("GEMINI_API_KEY") or os.environ.get("GEMINI_KEY_1")
+        if not api_key:
+            return instant_result
+
+        prompt_file = Path(__file__).parent / "prompt.md"
+        if not prompt_file.exists():
+            return instant_result
+
+        system_prompt = prompt_file.read_text(encoding="utf-8")
+        genai.configure(api_key=api_key)
+        model = genai.GenerativeModel(
+            model_name="gemini-2.0-flash",
+            system_instruction=system_prompt,
+            generation_config={"temperature": 0.2, "max_output_tokens": 1024},
+        )
+
+        user_msg = (
+            "Calculate cost estimate for:\n"
+            f"```json\n{json.dumps(fields, indent=2)}\n```\n"
+            "Return ONLY valid JSON — no explanation."
+        )
+        response = model.generate_content(user_msg)
+        text = response.text.strip()
+
+        # Extract JSON
+        fenced = re.search(r"```(?:json)?\s*(\{.*?\})\s*```", text, re.DOTALL)
+        raw = fenced.group(1) if fenced else re.search(r"\{.*\}", text, re.DOTALL)
+        if not raw:
+            return instant_result
+
+        enhanced = json.loads(raw if isinstance(raw, str) else raw.group(0))
+        enhanced["agent"] = "cost_agent"
+        enhanced["source"] = "gemini_enhanced"
+        log("Gemini enhancement successful")
+        return enhanced
+
+    except Exception as e:
+        log(f"Gemini enhancement skipped: {e} — using instant estimate")
+        return instant_result
+
+
+# ── Main Entry Point ──────────────────────────────────────────────────────────
+
+def run_cost_agent(input_data) -> dict:
     if isinstance(input_data, str):
         try:
             input_data = json.loads(input_data)
-        except json.JSONDecodeError as exc:
-            raise ValueError(f"input_data is not valid JSON: {exc}") from exc
+        except json.JSONDecodeError as e:
+            raise ValueError(f"Invalid JSON input: {e}")
 
     if not isinstance(input_data, dict):
-        raise TypeError(
-            f"input_data must be a dict or JSON string, got {type(input_data).__name__}"
-        )
+        raise TypeError(f"Expected dict, got {type(input_data).__name__}")
 
-    # ── 2. Apply defaults for any missing fields (graceful) ───────────────────
-    input_data = dict(input_data)
-    input_data.setdefault("recommended_department", "General Medicine")
-    input_data.setdefault("urgency_level", "urgent")
-    input_data.setdefault("hospital_name", "Unknown Hospital")
-    input_data.setdefault("hospital_type", "private")
-    input_data.setdefault("visit_type", "OPD")
+    # FIX-2 + FIX-3: Smart field extraction, never crashes
+    fields = _smart_defaults(input_data)
+    log(f"Processing: dept={fields['department']} urgency={fields['urgency']} "
+        f"type={fields['hospital_type']} visit={fields['visit_type']}")
 
-    # ── 3. Validate & clean ───────────────────────────────────────────────────
-    validated = _validate_input(input_data)
+    # FIX-4: Always get instant estimate first
+    result = _instant_estimate(fields)
+    log(f"Instant estimate: PKR {result['estimated_cost']['minimum']:,} - "
+        f"{result['estimated_cost']['maximum']:,}")
 
-    # ── 4. INSTANT keyword-based response (primary — always fast) ─────────────
-    result = _instant_cost_lookup(
-        department=validated["recommended_department"],
-        urgency=validated["urgency_level"],
-        hospital_type=validated["hospital_type"],
-        visit_type=validated["visit_type"],
-    )
-
-    # ── 5. Optional: Gemini enhancement (skip gracefully if unavailable) ───────
-    try:
-        load_dotenv(dotenv_path=Path(__file__).parent / ".env")
-        api_key = os.environ.get("GEMINI_API_KEY")
-        if api_key:
-            system_prompt = _load_system_prompt()
-            client = genai.Client(api_key=api_key)
-            user_message = _build_user_message(validated)
-            response = client.models.generate_content(
-                model=MODEL_NAME,
-                contents=user_message,
-                config=genai_types.GenerateContentConfig(
-                    system_instruction=system_prompt,
-                    temperature=0.2,
-                    top_p=0.95,
-                    max_output_tokens=2048,
-                ),
-            )
-            enhanced = _extract_json_from_response(response.text.strip())
-            enhanced["source"] = "gemini_enhanced"
-            return enhanced
-    except Exception:
-        # Gemini failed or timed out — fall back to instant result silently
-        pass
+    # Try Gemini enhancement (optional, quota-safe)
+    result = _try_gemini_enhance(fields, result)
 
     return result
 
 
-# ── CLI / Quick-test entry point ──────────────────────────────────────────────
-
-from flask import Flask, request, jsonify
+# ── Flask App ─────────────────────────────────────────────────────────────────
 
 app = Flask(__name__)
+CORS(app)
 
-@app.route('/health', methods=['GET'])
-def health():
-    return jsonify({"status": "healthy", "agent": "cost-agent", "port": 5003})
+
+def _handle_request(data: dict) -> dict:
+    """Shared handler for both routes."""
+    log(f"Incoming fields: {list(data.keys())}")
+    result = run_cost_agent(data)
+    log(f"Response ready — source: {result.get('source', 'unknown')}")
+    return result
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# FIX-1: TWO routes — orchestrator calls /analyze, legacy is /cost-agent/analyze
+# ─────────────────────────────────────────────────────────────────────────────
 
 @app.route('/analyze', methods=['POST'])
-def analyze():
+def analyze_short():
+    """Primary route — what orchestrator calls."""
     try:
-        data = request.json or {}
-        test_input = {
-            "recommended_department": data.get("recommended_department", "Cardiology"),
-            "urgency_level": data.get("urgency_level", "urgent"),
-            "hospital_name": data.get("hospital_name", "Aga Khan University Hospital"),
-            "hospital_type": data.get("hospital_type", "private"),
-            "visit_type": data.get("visit_type", "OPD"),
-        }
-        result = run_cost_agent(test_input)
-        return jsonify(result)
+        data = request.get_json(force=True) or {}
+        return jsonify(_handle_request(data)), 200
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        log(f"ERROR /analyze: {e}")
+        # FIX-4: Even on error, return a usable response
+        return jsonify({
+            "agent": "cost_agent",
+            "estimated_cost": {"minimum": 1000, "maximum": 5000, "currency": "PKR"},
+            "breakdown": {
+                "consultation": "PKR 500 - 2,000",
+                "probable_tests": "PKR 300 - 1,500",
+                "medicine_estimate": "PKR 200 - 1,500",
+            },
+            "payment_advice": "Cash aur card dono laye.",
+            "bring_checklist": ["CNIC", "Cash", "Debit Card"],
+            "insurance_applicable": False,
+            "government_option_available": True,
+            "government_cost": "PKR 300 - 1,500 (government hospital mein)",
+            "reasoning": "Default estimate (error fallback)",
+            "disclaimer": "Yeh estimate approximate hai. Hospital se confirm karein.",
+            "source": "error_fallback",
+            "error": str(e),
+        }), 200  # Return 200 so orchestrator doesn't break
+
+
+@app.route('/cost-agent/analyze', methods=['POST'])
+def analyze_long():
+    """Legacy route — backward compatibility."""
+    return analyze_short()
+
+
+@app.route('/health', methods=['GET'])
+@app.route('/cost-agent/health', methods=['GET'])
+def health():
+    return jsonify({
+        "status": "healthy",
+        "agent": "cost_agent",
+        "port": 5003,
+        "routes": ["/analyze", "/cost-agent/analyze"],
+        "mode": "instant_lookup + optional_gemini",
+    })
+
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5003)
+    port = int(os.environ.get("PORT", 5003))
+    log(f"Cost Agent starting on port {port}")
+    log(f"Routes: /analyze (primary) | /cost-agent/analyze (legacy)")
+    app.run(host="0.0.0.0", port=port, debug=False)
