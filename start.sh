@@ -5,6 +5,7 @@ echo "Starting Sehat Agent — All Services"
 
 export GEMINI_API_KEY=${GEMINI_API_KEY}
 export GEMINI_API_KEY_2=${GEMINI_API_KEY_2}
+export GOOGLE_PLACES_API_KEY=${GOOGLE_PLACES_API_KEY}
 
 # Start Symptom Agent (5001)
 cd /app/agents/symptom-agent && PORT=5001 python symptom_agent_server.py &
