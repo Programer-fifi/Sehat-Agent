@@ -288,10 +288,8 @@ def _instant_estimate(fields: dict) -> dict:
 # ── Optional Gemini Enhancement ───────────────────────────────────────────────
 
 def _try_gemini_enhance(fields: dict, instant_result: dict) -> dict:
-    """
-    Try to enhance the instant result with Gemini.
-    If Gemini fails (quota, network, etc.) silently return instant_result.
-    """
+    """Gemini enhancement disabled — instant lookup is sufficient."""
+    return instant_result
     try:
         import google.generativeai as genai
         api_key = os.environ.get("GEMINI_API_KEY") or os.environ.get("GEMINI_KEY_1")
@@ -433,3 +431,4 @@ if __name__ == "__main__":
     log(f"Cost Agent starting on port {port}")
     log(f"Routes: /analyze (primary) | /cost-agent/analyze (legacy)")
     app.run(host="0.0.0.0", port=port, debug=False)
+
