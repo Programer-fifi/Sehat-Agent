@@ -50,7 +50,51 @@ def process_medical_report(image_input, input_type="image_path"):
 
         elif input_type == "base64":
             import base64
+            # Strip data URL prefix if present
+            if "," in image_input:
+                image_input = image_input.split(",")[1]
             decoded = base64.b64decode(image_input)
+            
+            # Check if PDF
+            if decoded[:4] == b'%PDF':
+                log("Report type: PDF as base64 — extracting text")
+                try:
+                    import pypdf
+                    reader = pypdf.PdfReader(io.BytesIO(decoded))
+                    text = ""
+                    for page in reader.pages:
+                        text += page.extract_text()
+                    # Send as text prompt instead of image
+                    client2 = get_client()
+                    text_prompt = f"""Analyze this medical report text and return JSON:
+{text}
+
+Return ONLY strict JSON:
+{{
+    "report_type": "type",
+    "all_values": [{{"name": "test", "value": "val", "unit": "u", "normal_range": "range", "status": "normal/high/low"}}],
+    "critical_findings": ["finding"],
+    "key_findings": ["finding"],
+    "abnormal_values": [{{"test": "name", "value": "val", "normal_range": "range", "status": "high/low"}}],
+    "summary_in_simple_urdu_english": "summary",
+    "recommended_specialist": "doctor type",
+    "urgency_indicated": "LOW or MEDIUM or HIGH or CRITICAL"
+}}"""
+                    response2 = client2.models.generate_content(
+                        model="gemini-2.0-flash",
+                        contents=[text_prompt]
+                    )
+                    text_response = response2.text.strip()
+                    if text_response.startswith("```json"):
+                        text_response = text_response[7:-3].strip()
+                    elif text_response.startswith("```"):
+                        text_response = text_response[3:-3].strip()
+                    return json.loads(text_response)
+                except Exception as e:
+                    log(f"PDF text extraction failed: {e}")
+                    return {"error": f"PDF process nahi ho saka: {str(e)}"}
+            
+            # Regular image
             img = Image.open(io.BytesIO(decoded)).convert("RGB")
             buffer = io.BytesIO()
             img.save(buffer, format="JPEG")
