@@ -25,6 +25,7 @@ from agent_caller import (
     _extract_city_hint,
     _extract_hospital_type_hint,
     _extract_hospital_name_from_message,
+    _extract_hospital_name,
 )
 from response_combiner import combine_responses
 
@@ -135,7 +136,7 @@ User Message: {user_message}
 Output ONLY the category name. Nothing else.
 """
         response = client.models.generate_content(
-            model='gemini-2.0-flash',
+            model='gemini-2.5-flash',
             contents=prompt,
         )
         intent = response.text.strip().upper()
@@ -209,7 +210,7 @@ def process_request(
     agent_outputs = {}
 
     # ── SYMPTOM_ONLY ──────────────────────────────────────────────────────────
-   if intent in ("SYMPTOM_ONLY", "REPORT_ANALYSIS"):
+    if intent in ("SYMPTOM_ONLY", "REPORT_ANALYSIS"):
         log_trace("Flow: Symptom Agent → Hospital Finder → Cost Agent")
         symptom_result = call_agent(5001, base_payload, log_trace)
         agent_outputs[5001] = symptom_result

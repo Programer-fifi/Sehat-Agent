@@ -1,0 +1,17 @@
+{
+  "name": "sehat-agent",
+  "version": "1.0.0",
+  "description": "**Google Antigravity Hackathon — Challenge 1: Autonomous Content-to-Action Agent**",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "@capacitor/android": "^8.3.4",
+    "@capacitor/cli": "^8.3.4",
+    "@capacitor/core": "^8.3.4"
+  }
+}

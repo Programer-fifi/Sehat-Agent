@@ -305,7 +305,7 @@ def _try_gemini_enhance(fields: dict, instant_result: dict) -> dict:
         system_prompt = prompt_file.read_text(encoding="utf-8")
         genai.configure(api_key=api_key)
         model = genai.GenerativeModel(
-            model_name="gemini-2.0-flash",
+            model_name="gemini-2.5-flash",
             system_instruction=system_prompt,
             generation_config={"temperature": 0.2, "max_output_tokens": 1024},
         )

@@ -81,7 +81,7 @@ Return ONLY strict JSON:
     "urgency_indicated": "LOW or MEDIUM or HIGH or CRITICAL"
 }}"""
                     response2 = client2.models.generate_content(
-                        model="gemini-2.0-flash",
+                        model="gemini-2.5-flash",
                         contents=[text_prompt]
                     )
                     text_response = response2.text.strip()
@@ -160,7 +160,7 @@ If image is blurry, unclear, or not a medical document return ONLY:
     try:
         log("Sending report to Gemini Vision...")
         response = client.models.generate_content(
-            model="gemini-2.0-flash",
+            model="gemini-2.5-flash",
             contents=[
                 types.Part.from_bytes(data=image_bytes, mime_type="image/jpeg"),
                 prompt

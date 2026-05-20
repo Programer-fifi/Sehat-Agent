@@ -1,0 +1,5 @@
+{
+  "appId": "com.sehatagent.app",
+  "appName": "Sehat Agent",
+  "webDir": "agents/orchestrator/static"
+}
