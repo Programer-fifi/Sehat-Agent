@@ -1,3 +1,12 @@
+---
+title: Sehat Agent
+emoji: 🏥
+colorFrom: green
+colorTo: blue
+sdk: docker
+pinned: false
+---
+
 # 🏥 Sehat Agent
 ### Pakistan's First AI-Powered Medical Navigation System
 **Google Antigravity Hackathon — Challenge 1: Autonomous Content-to-Action Agent**
