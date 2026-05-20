@@ -3,7 +3,7 @@ import json
 import re
 from datetime import datetime
 
-from google import genai
+import google.generativeai as genai
 from dotenv import load_dotenv
 from departments import SYMPTOM_DEPARTMENT_MAP
 from questions import get_follow_up_question, is_emergency
@@ -12,37 +12,31 @@ load_dotenv()
 
 MODEL_NAME = "gemini-2.5-flash"
 
+# Module-level constants — defined once, not inside function
 CRITICAL_PATTERNS = [
     "turning blue", "lips blue", "face blue", "nails blue",
     "fainted", "passed out", "unconscious", "not responding",
     "can't breathe", "cannot breathe", "not breathing", "gasping",
     "no pulse", "heart stopped", "collapsed",
     "behosh", "hosh nahi", "saans nahi aa rahi", "neela ho",
-    "lips neeli", "chehra neela", "bp 200", "bp 190", "bp 180", "bp 170",
-    "blood pressure 200", "blood pressure high",
-    "bohat zyada bp", "bp bohat", "bp high", "bp dangerously high"
+    "lips neeli", "chehra neela",
 ]
 
 
-def _configure_client(use_backup=False, use_backup2=False):
-    if use_backup2:
-        key_name = "GEMINI_API_KEY_3"
-    elif use_backup:
-        key_name = "GEMINI_API_KEY_2"
-    else:
-        key_name = "GEMINI_API_KEY"
+def _configure_client(use_backup=False):
+    key_name = "GEMINI_API_KEY_2" if use_backup else "GEMINI_API_KEY"
     api_key = os.getenv(key_name)
     if not api_key:
         raise ValueError(f"{key_name} environment variable not set")
-    return genai.Client(api_key=api_key)
-
-
-def _call_gemini(client, prompt):
-    response = client.models.generate_content(
-        model=MODEL_NAME,
-        contents=prompt
+    genai.configure(api_key=api_key)
+    return genai.GenerativeModel(
+        model_name=MODEL_NAME,
+        generation_config={
+            "temperature": 0.3,
+            "top_p": 0.95,
+            "max_output_tokens": 1024,
+        }
     )
-    return response
 
 
 def log(message):
@@ -94,35 +88,6 @@ def keyword_fallback(user_message):
     return {"department": "General Medicine", "urgency": "LOW"}
 
 
-def _generate_fallback_summary(msg: str, is_critical: bool) -> str:
-    m = msg.lower()
-    if "bp" in m and any(x in m for x in ["200", "190", "180", "170", "high", "zyada"]):
-        return "Patient reports dangerously high blood pressure — hypertensive crisis possible. Immediate medical attention needed."
-    if any(x in m for x in ["behosh", "unconscious", "faint", "passed out", "hosh nahi"]):
-        return "Patient reports loss of consciousness — possible cardiac event, low BP, or oxygen deprivation. Emergency care required."
-    if any(x in m for x in ["blue", "neela", "cyanosis", "lips neeli"]):
-        return "Patient reports cyanosis (bluish discoloration) — possible oxygen deprivation or cardiac/respiratory emergency."
-    if any(x in m for x in ["bleeding", "khoon nahi ruk", "bohat khoon"]):
-        return "Patient reports severe bleeding — immediate emergency care required."
-    if any(x in m for x in ["goli", "shot", "accident", "hadsa", "haadsa"]):
-        return "Patient reports traumatic injury — immediate emergency care required."
-    if any(x in m for x in ["chest", "seena", "dil ka", "heart attack", "dil dard"]):
-        return "Patient reports chest/heart symptoms — possible cardiac event. Immediate evaluation required."
-    if any(x in m for x in ["saans nahi", "not breathing", "breathe nahi"]):
-        return "Patient reports breathing difficulty — possible respiratory emergency. Immediate care required."
-    if any(x in m for x in ["bukhar", "fever", "temperature", "101", "102", "103"]):
-        return "Patient reports fever — possible infection or viral illness. Medical evaluation recommended."
-    if any(x in m for x in ["ulti", "vomit", "diarrhea", "loose motion"]):
-        return "Patient reports gastrointestinal symptoms — dehydration risk. Medical evaluation recommended."
-    if any(x in m for x in ["sar dard", "headache", "sir dard", "migraine"]):
-        return "Patient reports headache — severity and duration require medical assessment."
-    if any(x in m for x in ["dard", "pain", "ache", "takleef"]):
-        return "Patient reports pain — location and severity require medical evaluation."
-    if is_critical:
-        return f"CRITICAL symptoms reported: {msg[:80]}. Immediate emergency care required."
-    return f"Symptoms reported: {msg[:80]}{'...' if len(msg) > 80 else ''}. Please see recommended department."
-
-
 def analyze_symptoms(
     user_message,
     report_findings=None,
@@ -135,12 +100,13 @@ def analyze_symptoms(
     language = detect_language(user_message)
     log(f"Language detected: {language}")
 
+    # ── PRE-CHECK: force CRITICAL if emergency/critical keywords detected ─────
     force_critical = is_emergency(user_message) or any(p in user_message.lower() for p in CRITICAL_PATTERNS)
     if force_critical:
         log("Force CRITICAL detected — running Gemini for summary only")
-
+    # ── CHECK 3: Gemini analysis ──────────────────────────────────────────────
     try:
-        client = _configure_client(use_backup=False)
+        model = _configure_client(use_backup=False)
 
         departments_json = json.dumps(SYMPTOM_DEPARTMENT_MAP, ensure_ascii=False)
 
@@ -164,7 +130,7 @@ Available departments: {departments_json}
 
 Respond ONLY in strict JSON (no markdown, no extra text):
 {{
-    "symptoms_summary": "medical description of what the patient is experiencing — describe the clinical significance, possible causes, NOT just repeat their words",
+   "symptoms_summary": "medical description of what the patient is experiencing — describe the clinical significance, possible causes, NOT just repeat their words",
     "combined_analysis": "analysis combining symptoms and report if available",
     "urgency_level": "LOW or MEDIUM or HIGH or CRITICAL",
     "recommended_department": "exact department name from the available departments map",
@@ -177,7 +143,7 @@ Respond ONLY in strict JSON (no markdown, no extra text):
 }}
 
 URGENCY RULES — override everything else:
-- For CRITICAL cases, symptoms_summary MUST describe the medical emergency
+- For CRITICAL cases, symptoms_summary MUST describe the medical emergency (e.g. 'Loss of consciousness with cyanosis — possible oxygen deprivation or cardiac event')
 - CRITICAL if: unconscious, not breathing, turning blue, cyanosis, no pulse, collapsed, seizure
 - CRITICAL if: fainted + any other symptom present
 - HIGH if: severe chest pain, severe bleeding, high fever in infant
@@ -193,27 +159,19 @@ RULES for follow_up_needed:
         log(f"Sending to Gemini {MODEL_NAME} for analysis...")
 
         try:
-            response = _call_gemini(client, prompt)
+            response = model.generate_content(prompt)
         except Exception as e:
             error_str = str(e)
-            if "429" in error_str or "RESOURCE_EXHAUSTED" in error_str or "quota" in error_str.lower() or "403" in error_str:
-                log("Key 1 failed. Switching to GEMINI_API_KEY_2...")
-                try:
-                    client = _configure_client(use_backup=True)
-                    response = _call_gemini(client, prompt)
-                except Exception as e2:
-                    error_str2 = str(e2)
-                    if "429" in error_str2 or "quota" in error_str2.lower() or "403" in error_str2:
-                        log("Key 2 also failed. Switching to GEMINI_API_KEY_3...")
-                        client = _configure_client(use_backup2=True)
-                        response = _call_gemini(client, prompt)
-                    else:
-                        raise e2
+            if "429" in error_str or "RESOURCE_EXHAUSTED" in error_str or "quota" in error_str.lower():
+                log("Quota exceeded on primary key. Switching to GEMINI_API_KEY_2...")
+                model = _configure_client(use_backup=True)
+                response = model.generate_content(prompt)
             else:
                 raise e
 
         text_response = response.text.strip()
 
+        # Clean markdown fences
         if text_response.startswith("```json"):
             text_response = text_response[7:]
             if text_response.endswith("```"):
@@ -272,7 +230,7 @@ RULES for follow_up_needed:
             "agent": "symptom_report_agent",
             "status": "needs_followup" if follow_up else "complete",
             "session_id": session_id,
-            "symptoms_summary": _generate_fallback_summary(user_message, force_critical),
+            "symptoms_summary": "CRITICAL: Behoshi (loss of consciousness) — possible causes include low blood pressure, cardiac event, or oxygen deprivation. Immediate emergency care required." if force_critical else user_message,
             "report_findings": report_findings,
             "combined_analysis": "Basic analysis using keyword matching (AI temporarily unavailable).",
             "urgency_level": "CRITICAL" if force_critical else fallback["urgency"],

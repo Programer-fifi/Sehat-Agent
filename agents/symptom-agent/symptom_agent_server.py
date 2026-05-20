@@ -1,22 +1,13 @@
 import os
 import json
-import time 
 from datetime import datetime
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 from dotenv import load_dotenv
-
-# Load environment variables
-load_dotenv()
-
-# --- FIX: Clean API Keys to eliminate "Illegal Header Value" gRPC Errors ---
-for key in ["GEMINI_API_KEY_1", "GEMINI_API_KEY_2", "GEMINI_API_KEY_3"]:
-    if os.getenv(key):
-        os.environ[key] = os.getenv(key).strip()
-
-# Import after cleaning keys to make sure modules get the clean strings
 from symptom_agent import analyze_symptoms
 from report_reader import process_medical_report
+
+load_dotenv()
 
 app = Flask(__name__)
 CORS(app)

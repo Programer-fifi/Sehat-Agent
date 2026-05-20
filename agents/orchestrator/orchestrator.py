@@ -25,7 +25,6 @@ from agent_caller import (
     _extract_city_hint,
     _extract_hospital_type_hint,
     _extract_hospital_name_from_message,
-    _extract_hospital_name,
 )
 from response_combiner import combine_responses
 
@@ -136,7 +135,7 @@ User Message: {user_message}
 Output ONLY the category name. Nothing else.
 """
         response = client.models.generate_content(
-            model='gemini-2.5-flash',
+            model='gemini-2.0-flash',
             contents=prompt,
         )
         intent = response.text.strip().upper()
@@ -211,36 +210,25 @@ def process_request(
 
     # ── SYMPTOM_ONLY ──────────────────────────────────────────────────────────
     if intent in ("SYMPTOM_ONLY", "REPORT_ANALYSIS"):
-        log_trace("Flow: Symptom Agent → Hospital Finder → Cost Agent")
+        log_trace("Flow: Symptom Agent (5001) → Cost Agent (5003) with symptom-based cost")
         symptom_result = call_agent(5001, base_payload, log_trace)
         agent_outputs[5001] = symptom_result
 
-        symptom_dept = symptom_result.get("recommended_department") or _extract_department_hint(user_message)
+        symptom_dept    = symptom_result.get("recommended_department") or _extract_department_hint(user_message)
         symptom_urgency = symptom_result.get("urgency_level", "routine") or "routine"
-
-        enriched = {
-            **base_payload,
-            "department": symptom_dept,
-            "urgency_level": symptom_urgency,
-            "hospital_type": "any",
-        }
-
-        hospital_result = call_agent(5002, enriched, log_trace)
-        agent_outputs[5002] = hospital_result
-
-        hospital_name = _extract_hospital_name(hospital_result, user_message)
-
         cost_payload = {
             **base_payload,
-            "department": symptom_dept,
+            "department":             symptom_dept,
             "recommended_department": symptom_dept,
-            "urgency_level": symptom_urgency,
-            "hospital_name": hospital_name,
-            "hospital_type": "any",
-            "visit_type": "OPD",
+            "urgency_level":          symptom_urgency,
+            "hospital_name":          "General Hospital",
+            "hospital_type":          "any",
+            "visit_type":             "OPD",
         }
+        log_trace(f"Calling Cost Agent with symptom dept: {symptom_dept}, urgency: {symptom_urgency}")
         cost_result = call_agent(5003, cost_payload, log_trace)
         agent_outputs[5003] = cost_result
+
     # ── HOSPITAL_NEEDED ───────────────────────────────────────────────────────
     elif intent == "HOSPITAL_NEEDED":
         log_trace("Flow: Sequential — Hospital Finder → Cost Agent")

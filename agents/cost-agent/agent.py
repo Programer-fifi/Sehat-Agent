@@ -288,8 +288,10 @@ def _instant_estimate(fields: dict) -> dict:
 # ── Optional Gemini Enhancement ───────────────────────────────────────────────
 
 def _try_gemini_enhance(fields: dict, instant_result: dict) -> dict:
-    """Gemini enhancement disabled — instant lookup is sufficient."""
-    return instant_result
+    """
+    Try to enhance the instant result with Gemini.
+    If Gemini fails (quota, network, etc.) silently return instant_result.
+    """
     try:
         import google.generativeai as genai
         api_key = os.environ.get("GEMINI_API_KEY") or os.environ.get("GEMINI_KEY_1")
@@ -303,7 +305,7 @@ def _try_gemini_enhance(fields: dict, instant_result: dict) -> dict:
         system_prompt = prompt_file.read_text(encoding="utf-8")
         genai.configure(api_key=api_key)
         model = genai.GenerativeModel(
-            model_name="gemini-2.5-flash",
+            model_name="gemini-2.0-flash",
             system_instruction=system_prompt,
             generation_config={"temperature": 0.2, "max_output_tokens": 1024},
         )
@@ -431,4 +433,3 @@ if __name__ == "__main__":
     log(f"Cost Agent starting on port {port}")
     log(f"Routes: /analyze (primary) | /cost-agent/analyze (legacy)")
     app.run(host="0.0.0.0", port=port, debug=False)
-
