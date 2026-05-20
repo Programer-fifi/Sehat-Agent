@@ -1,0 +1,13 @@
+services:
+  - type: web
+    name: sehat-agent
+    env: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: python start.py
+    envVars:
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: GEMINI_API_KEY_2
+        sync: false
+      - key: GOOGLE_PLACES_API_KEY
+        sync: false
