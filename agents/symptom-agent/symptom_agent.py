@@ -19,7 +19,9 @@ CRITICAL_PATTERNS = [
     "can't breathe", "cannot breathe", "not breathing", "gasping",
     "no pulse", "heart stopped", "collapsed",
     "behosh", "hosh nahi", "saans nahi aa rahi", "neela ho",
-    "lips neeli", "chehra neela",
+    "lips neeli", "chehra neela","bp 200", "bp 190", "bp 180", "bp 170",
+    "blood pressure 200", "blood pressure high",
+    "bohat zyada bp", "bp bohat", "bp high", "bp dangerously high"
 ]
 
 
@@ -86,6 +88,34 @@ def keyword_fallback(user_message):
     if best_match:
         return {"department": best_match, "urgency": best_urgency}
     return {"department": "General Medicine", "urgency": "LOW"}
+
+def _generate_fallback_summary(msg: str, is_critical: bool) -> str:
+    m = msg.lower()
+    if "bp" in m and any(x in m for x in ["200","190","180","170","high","zyada"]):
+        return "Patient reports dangerously high blood pressure — hypertensive crisis possible. Immediate medical attention needed."
+    if any(x in m for x in ["behosh","unconscious","faint","passed out","hosh nahi"]):
+        return "Patient reports loss of consciousness — possible cardiac event, low BP, or oxygen deprivation. Emergency care required."
+    if any(x in m for x in ["blue","neela","cyanosis","lips neeli"]):
+        return "Patient reports cyanosis (bluish discoloration) — possible oxygen deprivation or cardiac/respiratory emergency."
+    if any(x in m for x in ["bleeding","khoon nahi ruk","bohat khoon"]):
+        return "Patient reports severe bleeding — immediate emergency care required."
+    if any(x in m for x in ["goli","shot","accident","hadsa","haadsa"]):
+        return "Patient reports traumatic injury — immediate emergency care required."
+    if any(x in m for x in ["chest","seena","dil ka","heart attack","dil dard"]):
+        return "Patient reports chest/heart symptoms — possible cardiac event. Immediate evaluation required."
+    if any(x in m for x in ["saans nahi","not breathing","breathe nahi"]):
+        return "Patient reports breathing difficulty — possible respiratory emergency. Immediate care required."
+    if any(x in m for x in ["bukhar","fever","temperature","101","102","103"]):
+        return "Patient reports fever — possible infection or viral illness. Medical evaluation recommended."
+    if any(x in m for x in ["ulti","vomit","diarrhea","loose motion"]):
+        return "Patient reports gastrointestinal symptoms — dehydration risk. Medical evaluation recommended."
+    if any(x in m for x in ["sar dard","headache","sir dard","migraine"]):
+        return "Patient reports headache — severity and duration require medical assessment."
+    if any(x in m for x in ["dard","pain","ache","takleef"]):
+        return "Patient reports pain — location and severity require medical evaluation."
+    if is_critical:
+        return f"CRITICAL symptoms reported: {msg[:80]}. Immediate emergency care required."
+    return f"Symptoms reported: {msg[:80]}{'...' if len(msg) > 80 else ''}. Please see recommended department."
 
 
 def analyze_symptoms(
@@ -230,7 +260,7 @@ RULES for follow_up_needed:
             "agent": "symptom_report_agent",
             "status": "needs_followup" if follow_up else "complete",
             "session_id": session_id,
-            "symptoms_summary": "CRITICAL: Behoshi (loss of consciousness) — possible causes include low blood pressure, cardiac event, or oxygen deprivation. Immediate emergency care required." if force_critical else user_message,
+            "symptoms_summary": _generate_fallback_summary(user_message, force_critical),
             "report_findings": report_findings,
             "combined_analysis": "Basic analysis using keyword matching (AI temporarily unavailable).",
             "urgency_level": "CRITICAL" if force_critical else fallback["urgency"],
