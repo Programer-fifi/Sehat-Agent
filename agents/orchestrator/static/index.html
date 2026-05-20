@@ -1968,7 +1968,7 @@
             }
             traceContent.innerHTML = '<i style="color:var(--text-secondary)">Loading trace...</i>';
             try {
-                const res = await fetch(`http://localhost:5000/trace/${sessionId}`);
+                const res = await fetch(`https://programerfifi-sehat-agent.hf.space/trace/${sessionId}`);
                 if (!res.ok) throw new Error("HTTP " + res.status);
                 const data = await res.json();
                 const traceLines = Array.isArray(data.trace) ? data.trace : [];
@@ -2130,7 +2130,7 @@
                     };
                     if (base64File) payload.image = base64File;
 
-                    const res = await fetch('http://localhost:5000/analyze', {
+                    const res = await fetch('https://programerfifi-sehat-agent.hf.space/analyze', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify(payload),
@@ -2198,7 +2198,7 @@
                         disclaimer: "Always consult a qualified doctor.", agents_count: 1, total_time_seconds: 2.0
                     };
                 } else {
-                    const res = await fetch('http://localhost:5000/follow-up', {
+                    const res = await fetch('https://programerfifi-sehat-agent.hf.space/follow-up', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({
