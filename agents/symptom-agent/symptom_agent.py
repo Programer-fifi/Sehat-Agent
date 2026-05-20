@@ -10,7 +10,7 @@ from questions import get_follow_up_question, is_emergency
 
 load_dotenv()
 
-MODEL_NAME = "gemini-2.5-flash"
+MODEL_NAME = "gemini-2.0-flash"
 
 # Module-level constants — defined once, not inside function
 CRITICAL_PATTERNS = [
